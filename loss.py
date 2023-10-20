@@ -3,6 +3,7 @@ import torch
 from helpers import l1_loss_v1
 from helpers import weighted_l2_loss_v1
 from helpers import weighted_l2_loss_v2
+from helpers import l1_loss_v1
 from helpers import l1_loss_v2
 from helpers import quat_mult
 from helpers import params2rendervar
@@ -56,7 +57,7 @@ def compute_bg_loss(bg_pts, bg_rot, variables):
     return l1_loss_v2(bg_pts, variables["init_bg_pts"]) + l1_loss_v2(bg_rot, variables["init_bg_rot"])
 
 
-def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bool, new_obj:bool):
+def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bool):
 
     losses = {}
 
@@ -75,7 +76,7 @@ def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bo
     losses['im'] = compute_loss(image, curr_data['im'])
     losses['seg'] = compute_loss(seg, curr_data['seg'])
     
-    if not (is_initial_timestep or new_obj):
+    if not is_initial_timestep:
         is_fg = (params['seg_colors'][:, 0] > 0.5).detach()
         fg_pts = rendervar['means3D'][is_fg]
         fg_rot = rendervar['rotations'][is_fg]
