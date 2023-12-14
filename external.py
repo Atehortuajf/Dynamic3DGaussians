@@ -197,7 +197,7 @@ def densify(params, variables, optimizer, i):
             to_remove = torch.cat((to_split, torch.zeros(n * to_split.sum(), dtype=torch.bool, device="cuda")))
             params, variables = remove_points(to_remove, params, variables, optimizer)
 
-            remove_threshold = 0.25 if i == 5000 else 0.005
+            remove_threshold = 0.005
             to_remove = (torch.sigmoid(params['logit_opacities']) < remove_threshold).squeeze()
             if i >= 3000:
                 big_points_ws = torch.exp(params['log_scales']).max(dim=1).values > 0.1 * variables['scene_radius']

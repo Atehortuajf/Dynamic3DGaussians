@@ -23,7 +23,7 @@ def get_dataset(t, md, seq):
         seg = np.array(copy.deepcopy(Image.open(f"./data/{seq}/seg/{fn.replace('.jpg', '.png')}"))).astype(np.float32)
         seg = torch.tensor(seg).float().cuda()
         seg_col = torch.stack((seg, torch.zeros_like(seg), 1 - seg))
-        dataset.append({'cam': cam, 'im': im, 'seg': seg_col, 'id': c})
+        dataset.append({'cam': cam, 'im': im[:3], 'seg': seg_col, 'id': c})
     return dataset
 
 
@@ -52,7 +52,8 @@ def initialize_params(seq, md):
     }
     params = {k: torch.nn.Parameter(torch.tensor(v).cuda().float().contiguous().requires_grad_(True)) for k, v in
               params.items()}
-    cam_centers = np.linalg.inv(md['w2c'][0])[:, :3, 3]  # Get scene radius
+    # TODO CHANGE BACK TO linalg.inv
+    cam_centers = np.array(md['w2c'][0])[:, :3, 3]  # Get scene radius
     scene_radius = 1.1 * np.max(np.linalg.norm(cam_centers - np.mean(cam_centers, 0)[None], axis=-1))
     variables = {'max_2D_radius': torch.zeros(params['means3D'].shape[0]).cuda().float(),
                  'scene_radius': scene_radius,
@@ -220,6 +221,6 @@ def train(seq, exp):
 
 if __name__ == "__main__":
     exp_name = "exp1"
-    for sequence in ["basketball", "boxes", "football", "juggle", "softball", "tennis"]:
+    for sequence in ["gt"]:
         train(sequence, exp_name)
         torch.cuda.empty_cache()
