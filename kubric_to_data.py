@@ -5,59 +5,104 @@ import os
 import re
 import numpy as np
 import shutil
+import cv2
+import open3d as o3d
 from PIL import Image
 from glob import glob
 
-def get_pt_cloud(camera_path):
-    # Load depth image
-    depth_image_path = os.path.join(camera_path, 'depth_00000.tiff')
-    depth_image = Image.open(depth_image_path)
-    depth_array = np.array(depth_image)
+def unproject(coordinates, z, intrinsics):
+    """Unproject 2D camera coordinates with the given Z values."""
 
-    # Load RGB image
-    rgb_image_path = os.path.join(camera_path, 'rgba_00000.png')
-    rgb_image = Image.open(rgb_image_path)
-    rgb_array = np.array(rgb_image)
+    # Apply the inverse intrinsics to the coordinates.
+    coordinates = np.concatenate((coordinates, np.ones_like(z[..., None])), axis=-1)
+    ray_directions = np.einsum(
+        "... i j, ... j -> ... i", np.linalg.inv(intrinsics), coordinates
+    )
 
-    # Load metadata
-    metadata_path = os.path.join(camera_path, 'metadata.json')
+    # Apply the supplied depth values.
+    return ray_directions * z[..., None]
+
+def get_c2w(camera_position):
+    # Camera position
+    cam_pos = np.array(camera_position)
+    
+    # Forward vector (looking at the origin)
+    forward = -cam_pos / np.linalg.norm(cam_pos)
+    
+    # Create arbitrary up vector
+    up = np.array([0, 1, 0]) if abs(forward[1]) != 1 else np.array([1, 0, 0])
+    
+    # Right vector
+    right = np.cross(up, forward)
+    right /= np.linalg.norm(right)
+    
+    # Recompute the up vector to ensure orthonormality
+    up = np.cross(forward, right)
+    
+    # Create rotation matrix
+    rotation_matrix = np.column_stack((right, up, forward))
+    
+    # Create translation matrix
+    translation_matrix = np.eye(4)
+    translation_matrix[:3, 3] = cam_pos
+    
+    # Create cam2world matrix
+    cam2world_matrix = np.eye(4)
+    cam2world_matrix[:3, :3] = rotation_matrix
+    cam2world_matrix = np.dot(translation_matrix, cam2world_matrix)
+    
+    return cam2world_matrix
+
+def get_intrinsics(metadata):
+  # Extracting the necessary values from metadata
+  focal_length_mm = metadata['camera']['focal_length']
+  sensor_width_mm = metadata['camera']['sensor_width']
+  resolution = metadata['metadata']['resolution']
+
+  # Calculating the focal lengths in pixel units
+  fx = fy = focal_length_mm * (resolution[0] / sensor_width_mm)
+
+  # Calculating the principal point (center of the image)
+  cx = resolution[0] / 2
+  cy = resolution[1] / 2
+
+  # Building the intrinsic matrix
+  intrinsics_matrix = np.array([
+      [fx, 0, cx],
+      [0, fy, cy],
+      [0, 0, 1]
+  ])
+
+  return intrinsics_matrix
+
+def get_pcd(cam_path):
+    depth_arr = np.array(Image.open(os.path.join(cam_path, 'depth_00000.tiff')))
+    color = o3d.io.read_image(os.path.join(cam_path, 'rgba_00000.png'))
+
+    segmentation_image_path = os.path.join(cam_path, 'segmentation_00000.png')
+    segmentation = cv2.imread(segmentation_image_path, 0)
+    segmentation[segmentation != 0] = 1
+
+    metadata_path = os.path.join(cam_path, 'metadata.json')
     with open(metadata_path, 'r') as file:
         metadata = json.load(file)
-
-    # Extract camera parameters from metadata
-    fx = metadata['camera']['K'][0][0]
-    fy = metadata['camera']['K'][1][1]
-    cx = metadata['camera']['K'][0][2]
-    cy = metadata['camera']['K'][1][2]
-
-    # Generate point cloud from depth image
-    height, width = depth_array.shape
-
-    # Create a grid of coordinates corresponding to the image pixel coordinates
-    x = np.linspace(0, width - 1, width)
-    y = np.linspace(0, height - 1, height)
-    x, y = np.meshgrid(x, y)
-
-    # Back-project the 2D pixel locations into 3D space
-    z = depth_array
-    x = (x - cx) * z / fx
-    y = (y - cy) * z / fy
-
-    # Stack the coordinates into a point cloud
-    points = np.stack((x, y, z), axis=2)
-
-    # Flatten the point cloud and remove points with zero depth
-    max_depth_threshold = 10
-    condition= np.logical_and(z > 0, z < max_depth_threshold)
-    valid_points = points[condition].reshape(-1, 3)
-
-    # Apply color to valid points
-    valid_colors = rgb_array[condition].reshape(-1, 4)[:,:3] # Remove the alpha channel
+    intrinsics = get_intrinsics(metadata)
+    #intrinsics = np.array(metadata['camera']['K'])
+    width = metadata['metadata']['resolution'][0]
+    height = metadata['metadata']['resolution'][1]
+    c2w = get_c2w(np.array(metadata['camera']['positions'][0]))
+    meshgrid = np.array(np.meshgrid(np.arange(width), np.arange(height))).transpose(1, 2, 0)
+    points_cam = unproject(meshgrid, depth_arr, intrinsics)
+    points = np.einsum(
+        "ij,klj->kli", c2w, np.concatenate((points_cam, np.ones_like(points_cam[..., 0, None])), axis=-1))
     
-    # Add segmentation (all ones for now)
-    seg = np.ones(shape=(valid_colors.shape[0], 1))
+    raw_pts = np.asarray(points[..., :3]).reshape(height*width,3)
+    raw_colors = np.asarray(color)[...,:3].reshape(height*width,3)
 
-    return np.concatenate((valid_points, valid_colors, seg), axis=1)
+    cam_origin = c2w @ np.array([0,0,0,1])
+    origin_proj = c2w @ np.array([0,0,12,1])
+
+    return np.concatenate((raw_pts, raw_colors[:raw_pts.shape[0]], segmentation.reshape(width*height, 1)[:raw_pts.shape[0]]), axis=-1)
 
 def post_process_json(nested_dict):
     """
@@ -90,8 +135,10 @@ def populate_jsons(count, camera_num, camera_path, w2c, k, cam_id, fn):
             metadata = json.load(file)
     for frame_path in glob(os.path.join(camera_path, 'rgba_*.png')):
         frame_id = int(re.search(r'\d+(?=\.png)', frame_path).group())
-        w2c[frame_id][count] = metadata['camera']['R']
-        k[frame_id][count] = metadata['camera']['K']
+        c2w = np.array(metadata['camera']['R'])
+        #c2w[:3,:3] = coord_swap(c2w[:3,:3])
+        w2c[frame_id][count] = np.linalg.inv(c2w).tolist()
+        k[frame_id][count] = get_intrinsics(metadata).tolist()
         cam_id[frame_id][count] = camera_num
         fn[frame_id][count] = "{}/{}.png".format(camera_num, str(frame_id).zfill(6))
     return metadata
@@ -101,8 +148,10 @@ def main(args):
 
     # Initial point cloud
     pt_cloud = np.empty((0, 7))
+    numpts = []
     for camera_path in cameras:
-        cam_cloud = get_pt_cloud(camera_path)
+        cam_cloud = get_pcd(camera_path)
+        numpts.append(cam_cloud.shape[0])
         pt_cloud = np.concatenate((pt_cloud, cam_cloud), axis=0)
     init_pt_cld = dict()
     init_pt_cld['data'] = pt_cloud
@@ -127,9 +176,8 @@ def main(args):
                         os.path.join(ims_folder, '{}.png'.format(frame_id.zfill(6))))
         for seg in glob(os.path.join(camera_path, 'segmentation_*.png')):
             frame_id = re.search(r'\d+(?=\.png)', seg).group()
-            # TODO might have to make it black and white?
-            shutil.copy(os.path.join(camera_path, 'segmentation_{}.png'.format(frame_id.zfill(5))),
-                        os.path.join(seg_folder, '{}.png'.format(frame_id.zfill(6))))
+            seg = Image.open(os.path.join(camera_path, 'segmentation_{}.png'.format(frame_id.zfill(5)))).convert('1')
+            seg.save(os.path.join(seg_folder, '{}.png'.format(frame_id.zfill(6))))
 
     # Prepare train/test json
     split = 5 # 1:X split in train/test, TODO make this an arg

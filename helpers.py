@@ -5,24 +5,43 @@ import numpy as np
 from diff_gaussian_rasterization import GaussianRasterizationSettings as Camera
 
 
-def setup_camera(w, h, k, w2c, near=0.01, far=100):
-    fx, fy, cx, cy = k[0][0], k[1][1], k[0][2], k[1][2]
-    w2c = torch.tensor(w2c).cuda().float()
-    cam_center = torch.inverse(w2c)[:3, 3]
-    w2c = w2c.unsqueeze(0).transpose(1, 2)
-    opengl_proj = torch.tensor([[2 * fx / w, 0.0, -(w - 2 * cx) / w, 0.0],
-                                [0.0, 2 * fy / h, -(h - 2 * cy) / h, 0.0],
-                                [0.0, 0.0, far / (far - near), -(far * near) / (far - near)],
-                                [0.0, 0.0, 1.0, 0.0]]).cuda().float().unsqueeze(0).transpose(1, 2)
-    full_proj = w2c.bmm(opengl_proj)
+def setup_camera(
+        width:int,
+        height:int,
+        instrinsics:np.ndarray,
+        world_2_cam:np.ndarray,
+        near:float, # Near and far clipping planes for depth in the camera's view frustum. (in meters?)
+        far:float      
+    ) -> Camera:
+    # Focal length, (x, y in pixels) --- optical center (x, y)
+    fx, fy, cx, cy = instrinsics[0][0], instrinsics[1][1], instrinsics[0][2], instrinsics[1][2]
+
+    world_2_cam_tensor:torch.Tensor = torch.tensor(world_2_cam).cuda().float()
+    
+    # position of the camera center in the world coordinates.
+    cam_center = torch.inverse(world_2_cam_tensor)[:3, 3]
+    world_2_cam_tensor = world_2_cam_tensor.unsqueeze(0).transpose(1, 2)
+
+    # This matrix is used to map 3D world coordinates to 2D camera coordinates, factoring in the depth.
+    opengl_proj = torch.tensor([
+        [ 2 * fx / width,              0.0,              -(width - 2 * cx) / width,   0.0 ],
+        [ 0.0,                         2 * fy / height,  -(height - 2 * cy) / height, 0.0 ],
+        [ 0.0,                         0.0,              far / (far - near),         -(far * near) / (far - near) ],
+        [ 0.0,                         0.0,              1.0,                         0.0 ]
+    ]).cuda().float().unsqueeze(0).transpose(1, 2)
+
+    # This will give a matrix that transforms from world coordinates
+    # directly to normalized device coordinates (NDC)
+    full_proj = world_2_cam_tensor.bmm(opengl_proj)
+    
     cam = Camera(
-        image_height=h,
-        image_width=w,
-        tanfovx=w / (2 * fx),
-        tanfovy=h / (2 * fy),
+        image_height=height,
+        image_width=width,
+        tanfovx=width / (2 * fx),
+        tanfovy=height / (2 * fy),
         bg=torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda"),
         scale_modifier=1.0,
-        viewmatrix=w2c,
+        viewmatrix=world_2_cam_tensor,
         projmatrix=full_proj,
         sh_degree=0,
         campos=cam_center,
@@ -31,7 +50,7 @@ def setup_camera(w, h, k, w2c, near=0.01, far=100):
     return cam
 
 
-def params2rendervar(params):
+def params2rendervar(params:dict) -> dict:
     rendervar = {
         'means3D': params['means3D'],
         'colors_precomp': params['rgb_colors'],
@@ -42,6 +61,48 @@ def params2rendervar(params):
     }
     return rendervar
 
+def union_masks(masks):
+    union_mask = torch.zeros_like(masks[0]).bool()
+    for mask, _ in masks:
+        union_mask = torch.logical_or(union_mask, mask)
+    return union_mask
+
+def get_sparse_depth_mean(pts, cam, mask):
+    dists = torch.tensor([]).to(pts.device)
+    visible_pts = pts[cam.markVisible(pts)]
+    cam_pos = cam.viewmatrix[:, :3, 3]
+    projections = project(visible_pts, cam)
+    for i in range(len(projections)):
+        if mask[projections[i][0], projections[i][1]]:
+            dist = (visible_pts[i] - cam_pos).norm()
+            dists = torch.cat(dists, dist.unsqueeze(0))
+    return dists.mean()
+
+def project(pts, cam):
+    # Ensure points are in homogeneous coordinates
+    if pts.shape[-1] == 3:
+        ones = torch.ones_like(pts[..., :1])
+        pts = torch.cat((pts, ones), dim=-1)
+
+    # Multiply points by the projection matrix
+    projected_points = torch.matmul(pts, cam.projmatrix.transpose(1, 2))
+
+    # Divide by the w component
+    w = projected_points[..., 3:4]
+    projected_points = projected_points[..., :3] / w
+
+    # Regularize for cam resolution
+    projected_points[..., 0] = int(projected_points[..., 0] * cam.image_width)
+    projected_points[..., 1] = int(projected_points[..., 1] * cam.image_height)
+
+    return projected_points[..., :2]
+
+#TODO: Implement these functions
+def unproject(points, depths, cam):
+    return None
+
+def sample_pts_uniformly(cam, image, num_samples):
+    return None
 
 def l1_loss_v1(x, y):
     return torch.abs((x - y)).mean()
