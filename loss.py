@@ -56,7 +56,7 @@ def compute_bg_loss(bg_pts, bg_rot, variables):
     return l1_loss_v2(bg_pts, variables["init_bg_pts"]) + l1_loss_v2(bg_rot, variables["init_bg_rot"])
 
 
-def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bool):
+def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bool, new_obj:bool):
 
     losses = {}
 
@@ -75,7 +75,7 @@ def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bo
     losses['im'] = compute_loss(image, curr_data['im'])
     losses['seg'] = compute_loss(seg, curr_data['seg'])
     
-    if not is_initial_timestep:
+    if not (is_initial_timestep or new_obj):
         is_fg = (params['seg_colors'][:, 0] > 0.5).detach()
         fg_pts = rendervar['means3D'][is_fg]
         fg_rot = rendervar['rotations'][is_fg]

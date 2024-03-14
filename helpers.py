@@ -2,6 +2,10 @@ import torch
 import os
 import open3d as o3d
 import numpy as np
+import cv2
+
+import torch.nn.functional as F
+
 from diff_gaussian_rasterization import GaussianRasterizationSettings as Camera
 
 
@@ -62,47 +66,52 @@ def params2rendervar(params:dict) -> dict:
     return rendervar
 
 def union_masks(masks):
-    union_mask = torch.zeros_like(masks[0]).bool()
+    union_mask = torch.zeros_like(masks[0][0][0]).bool()
     for mask, _ in masks:
-        union_mask = torch.logical_or(union_mask, mask)
+        union_mask = torch.logical_or(union_mask, mask[0])
     return union_mask
 
-def get_sparse_depth_mean(pts, cam, mask):
-    dists = torch.tensor([]).to(pts.device)
-    visible_pts = pts[cam.markVisible(pts)]
-    cam_pos = cam.viewmatrix[:, :3, 3]
-    projections = project(visible_pts, cam)
-    for i in range(len(projections)):
-        if mask[projections[i][0], projections[i][1]]:
-            dist = (visible_pts[i] - cam_pos).norm()
-            dists = torch.cat(dists, dist.unsqueeze(0))
-    return dists.mean()
+def homogenize_points(points):
+    return torch.cat([points, torch.ones_like(points[..., :1])], dim=-1)
 
-def project(pts, cam):
-    # Ensure points are in homogeneous coordinates
-    if pts.shape[-1] == 3:
-        ones = torch.ones_like(pts[..., :1])
-        pts = torch.cat((pts, ones), dim=-1)
+def unproject(coordinates, depth, intrinsics):
+    """Unproject 2D camera coordinates with the given Z values."""
 
-    # Multiply points by the projection matrix
-    projected_points = torch.matmul(pts, cam.projmatrix.transpose(1, 2))
+    # Apply the inverse intrinsics to the coordinates.
+    coordinates = homogenize_points(coordinates)
+    ray_directions = torch.einsum(
+        "... i j, ... j -> ... i", intrinsics.inverse(), coordinates
+    )
 
-    # Divide by the w component
-    w = projected_points[..., 3:4]
-    projected_points = projected_points[..., :3] / w
+    # Apply the supplied depth values.
+    return ray_directions * depth[..., None]
 
-    # Regularize for cam resolution
-    projected_points[..., 0] = int(projected_points[..., 0] * cam.image_width)
-    projected_points[..., 1] = int(projected_points[..., 1] * cam.image_height)
+#TODO: Sample from mask instead of the whole image (how???)
+def sample_pts_uniformly(entry, depth, mask, num_samples):
+    xy = torch.rand((num_samples, 2), dtype=torch.float32, device="cuda")
+    mask_cond = (mask[(xy[..., 0] * mask.shape[0]).int(), (xy[..., 1] * mask.shape[1]).int()])
+    # Expected value of xy_valid should match paper
+    xy_valid = xy[mask_cond] * 2 - 1 #[-1,1] for grid_sample
+    # Sample from depth map
+    sampled_depth = F.grid_sample(depth[None, None], xy_valid[None, None], align_corners=True).squeeze()
+    # Sample color from image
+    sampled_color = F.grid_sample(entry['im'][None], xy_valid[None, None], align_corners=True).squeeze()
+    # Unproject to 3D
+    sampled_points_cam = unproject(xy_valid, sampled_depth, entry['intrinsics'])
+    sampled_points = torch.einsum('...ij,...kj->...ki', entry['w2c'].inverse(),
+                                  homogenize_points(sampled_points_cam))[..., :3]
 
-    return projected_points[..., :2]
+    return sampled_points, sampled_color, torch.ones_like(sampled_depth)
 
-#TODO: Implement these functions
-def unproject(points, depths, cam):
-    return None
-
-def sample_pts_uniformly(cam, image, num_samples):
-    return None
+def record_video(vid_frames, seq, exp):
+    video_path = f"./output/{exp}/{seq}/video.avi"
+    frame_size = (vid_frames[0].shape[1], vid_frames[0].shape[2])
+    fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+    video_writer = cv2.VideoWriter(video_path, fourcc, 24, frame_size)
+    for frame in vid_frames:
+        frame_write = frame.detach().cpu().numpy().transpose(1, 2, 0)
+        video_writer.write((255. * frame_write).astype(np.uint8))
+    video_writer.release()
 
 def l1_loss_v1(x, y):
     return torch.abs((x - y)).mean()

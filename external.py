@@ -162,7 +162,7 @@ def inverse_sigmoid(x):
     return torch.log(x / (1 - x))
 
 
-def densify(params, variables, optimizer, i):
+def densify(params, variables, optimizer, i, new_objs=False):
     if i <= 5000:
         variables = accumulate_mean2d_gradient(variables)
         grad_thresh = 0.0002
@@ -197,7 +197,7 @@ def densify(params, variables, optimizer, i):
             to_remove = torch.cat((to_split, torch.zeros(n * to_split.sum(), dtype=torch.bool, device="cuda")))
             params, variables = remove_points(to_remove, params, variables, optimizer)
 
-            remove_threshold = 0.005
+            remove_threshold = 0.25 if i == 5000 else 0.005
             to_remove = (torch.sigmoid(params['logit_opacities']) < remove_threshold).squeeze()
             if i >= 3000:
                 big_points_ws = torch.exp(params['log_scales']).max(dim=1).values > 0.1 * variables['scene_radius']
@@ -206,7 +206,7 @@ def densify(params, variables, optimizer, i):
 
             torch.cuda.empty_cache()
 
-        if i > 0 and i % 3000 == 0:
+        if (i > 0 and i % 3000 == 0) and (not new_objs):
             new_params = {'logit_opacities': inverse_sigmoid(torch.ones_like(params['logit_opacities']) * 0.01)}
             params = update_params_and_optimizer(new_params, params, optimizer)
 

@@ -1,3 +1,7 @@
+
+"""
+Script to convert Kubric output data to the format required by the implementation. Run blender_script.py after for pt cloud
+"""
 import argparse
 from collections import defaultdict
 import json
@@ -5,53 +9,8 @@ import os
 import re
 import numpy as np
 import shutil
-import cv2
-import open3d as o3d
 from PIL import Image
 from glob import glob
-
-def unproject(coordinates, z, intrinsics):
-    """Unproject 2D camera coordinates with the given Z values."""
-
-    # Apply the inverse intrinsics to the coordinates.
-    coordinates = np.concatenate((coordinates, np.ones_like(z[..., None])), axis=-1)
-    ray_directions = np.einsum(
-        "... i j, ... j -> ... i", np.linalg.inv(intrinsics), coordinates
-    )
-
-    # Apply the supplied depth values.
-    return ray_directions * z[..., None]
-
-def get_c2w(camera_position):
-    # Camera position
-    cam_pos = np.array(camera_position)
-    
-    # Forward vector (looking at the origin)
-    forward = -cam_pos / np.linalg.norm(cam_pos)
-    
-    # Create arbitrary up vector
-    up = np.array([0, 1, 0]) if abs(forward[1]) != 1 else np.array([1, 0, 0])
-    
-    # Right vector
-    right = np.cross(up, forward)
-    right /= np.linalg.norm(right)
-    
-    # Recompute the up vector to ensure orthonormality
-    up = np.cross(forward, right)
-    
-    # Create rotation matrix
-    rotation_matrix = np.column_stack((right, up, forward))
-    
-    # Create translation matrix
-    translation_matrix = np.eye(4)
-    translation_matrix[:3, 3] = cam_pos
-    
-    # Create cam2world matrix
-    cam2world_matrix = np.eye(4)
-    cam2world_matrix[:3, :3] = rotation_matrix
-    cam2world_matrix = np.dot(translation_matrix, cam2world_matrix)
-    
-    return cam2world_matrix
 
 def get_intrinsics(metadata):
   # Extracting the necessary values from metadata
@@ -75,34 +34,6 @@ def get_intrinsics(metadata):
 
   return intrinsics_matrix
 
-def get_pcd(cam_path):
-    depth_arr = np.array(Image.open(os.path.join(cam_path, 'depth_00000.tiff')))
-    color = o3d.io.read_image(os.path.join(cam_path, 'rgba_00000.png'))
-
-    segmentation_image_path = os.path.join(cam_path, 'segmentation_00000.png')
-    segmentation = cv2.imread(segmentation_image_path, 0)
-    segmentation[segmentation != 0] = 1
-
-    metadata_path = os.path.join(cam_path, 'metadata.json')
-    with open(metadata_path, 'r') as file:
-        metadata = json.load(file)
-    intrinsics = get_intrinsics(metadata)
-    #intrinsics = np.array(metadata['camera']['K'])
-    width = metadata['metadata']['resolution'][0]
-    height = metadata['metadata']['resolution'][1]
-    c2w = get_c2w(np.array(metadata['camera']['positions'][0]))
-    meshgrid = np.array(np.meshgrid(np.arange(width), np.arange(height))).transpose(1, 2, 0)
-    points_cam = unproject(meshgrid, depth_arr, intrinsics)
-    points = np.einsum(
-        "ij,klj->kli", c2w, np.concatenate((points_cam, np.ones_like(points_cam[..., 0, None])), axis=-1))
-    
-    raw_pts = np.asarray(points[..., :3]).reshape(height*width,3)
-    raw_colors = np.asarray(color)[...,:3].reshape(height*width,3)
-
-    cam_origin = c2w @ np.array([0,0,0,1])
-    origin_proj = c2w @ np.array([0,0,12,1])
-
-    return np.concatenate((raw_pts, raw_colors[:raw_pts.shape[0]], segmentation.reshape(width*height, 1)[:raw_pts.shape[0]]), axis=-1)
 
 def post_process_json(nested_dict):
     """
@@ -145,18 +76,6 @@ def populate_jsons(count, camera_num, camera_path, w2c, k, cam_id, fn):
 
 def main(args):
     cameras = glob(os.path.join(args.data_path, 'camera_*'))
-
-    # Initial point cloud
-    pt_cloud = np.empty((0, 7))
-    numpts = []
-    for camera_path in cameras:
-        cam_cloud = get_pcd(camera_path)
-        numpts.append(cam_cloud.shape[0])
-        pt_cloud = np.concatenate((pt_cloud, cam_cloud), axis=0)
-    init_pt_cld = dict()
-    init_pt_cld['data'] = pt_cloud
-    # Save the dictionary as a .npz file
-    np.savez_compressed(os.path.join(args.output_path, 'init_pt_cld.npz'), **init_pt_cld)
 
     # Prepare ims and seg folder
     for camera_path in cameras:
