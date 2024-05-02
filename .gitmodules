@@ -1,0 +1,7 @@
+[submodule "dust3r"]
+	path = ./dust3r
+	url = https://github.com/naver/dust3r.git
+
+[submodule "diff-gaussian-rasterization-w-depth"]
+	path = ./diff-gaussian-rasterization-w-depth
+	url = https://github.com/JonathonLuiten/diff-gaussian-rasterization-w-depth.git

@@ -2,18 +2,27 @@ name: dynamic_gaussians
 channels:
   - pytorch
   - conda-forge
+  - nvidia
   - defaults
 dependencies:
-  - cudatoolkit=11.6
+  - gradio
+  - hydra-core
+  - einops
+  - scipy
+  - trimesh
+  - tensorboard
+  - pyglet<2
+  - matplotlib
   - python=3.10
   - pip=22.3.1
-  - pytorch=2.2.1
-  - torchaudio=0.12.1
-  - torchvision=0.13.1
-  - transformers=4.38.1
+  - pytorch
+  - pytorch-cuda
+  - torchaudio
+  - torchvision
   - tqdm=4.65.0
   - Pillow=9.4.0
   - pip:
     - open3d==0.16.0
-    - opencv-python-headless
-    - segment-anything==1.0
+    - huggingface-hub[torch]>=0.22
+    - roma
+    - opencv-python
