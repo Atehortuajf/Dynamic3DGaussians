@@ -1,0 +1,17 @@
+dust3r:
+  device: 'cuda'
+  batch_size: 1
+  schedule: 'cosine'
+  scene_graph: 'swin-5' # Use complete if you have a lot of VRAM
+  lr: 0.01
+  niter: 300
+  model_name: ../../../dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
+
+sparsify:
+  enabled: True
+  num_samples: 194105 # Taken from the original init_pt_cld for basketball
+
+data:
+  path: '../../../data/basketball'
+  priors: './data/basketball/priors.npz'
+  force_extract: False

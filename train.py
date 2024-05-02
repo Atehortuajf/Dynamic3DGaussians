@@ -62,7 +62,8 @@ def initialize_batch_sampler(dataset:list[dict]) -> list[int]:
 
 
 def get_data_point(batch_sampler:list[int], dataset:list[dict]) -> dict:
-    if len(batch_sampler) < 1: batch_sampler = initialize_batch_sampler(dataset)
+    if len(batch_sampler) < 1:
+        batch_sampler = initialize_batch_sampler(dataset)
     return dataset[batch_sampler.pop()]
 
 
