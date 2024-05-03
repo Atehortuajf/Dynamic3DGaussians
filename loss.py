@@ -3,7 +3,6 @@ import torch
 from helpers import l1_loss_v1
 from helpers import weighted_l2_loss_v1
 from helpers import weighted_l2_loss_v2
-from helpers import l1_loss_v1
 from helpers import l1_loss_v2
 from helpers import quat_mult
 from helpers import params2rendervar

@@ -1,12 +1,13 @@
 import os
-import json
 import random
 import copy
 
+import hydra
 import torch
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
+from omegaconf import DictConfig
 
 from diff_gaussian_rasterization import GaussianRasterizer as Renderer
 
@@ -19,6 +20,8 @@ from helpers import save_params
 from external import calc_psnr
 from external import densify
 from external import update_params_and_optimizer
+
+from priors import get_priors
 
 from loss import get_loss
 
@@ -68,7 +71,7 @@ def get_data_point(batch_sampler:list[int], dataset:list[dict]) -> dict:
 
 
 def initialize_params(sequence:str, metadata:dict) -> tuple[dict, dict]:
-    init_pt_cld:np.ndarray = np.load(f"./data/{sequence}/init_pt_cld.npz")["data"]
+    init_pt_cld:np.ndarray = metadata['pt_cld']
     segmentation = init_pt_cld[:, 6]
     square_distance, _ = o3d_knn(init_pt_cld[:, :3], NUM_NEAREST_NEIGH)
     mean_square_distance = square_distance.mean(-1).clip(min=1e-7)
@@ -177,12 +180,14 @@ def report_progress(params, data, i, progress_bar, every_i=100):
         progress_bar.update(every_i)
 
 
-def train(sequence:str, exp_name:str):
+def train(cfg : DictConfig):
+    exp_name = cfg.train.exp
+    sequence = cfg.train.seq
     if os.path.exists(f"./output/{exp_name}/{sequence}"):
         print(f"Experiment '{exp_name}' for sequence '{sequence}' already exists. Exiting.")
         return
    
-    metadata = json.load(open(f"./data/{sequence}/train_meta.json", 'r'))
+    metadata = get_priors(cfg)
     num_timesteps = len(metadata['fn'])
 
     params, variables = initialize_params(sequence, metadata)
@@ -219,12 +224,10 @@ def train(sequence:str, exp_name:str):
             
     save_params(output_params, sequence, exp_name)
 
-
-def main():
-    exp_name = "exp1"
-    for sequence in ["basketball", "boxes", "football", "juggle", "softball", "tennis"]:
-        train(sequence, exp_name)
-        torch.cuda.empty_cache()
+@hydra.main(config_path="config", config_name="train")
+def main(cfg : DictConfig):
+    train(cfg)
+    torch.cuda.empty_cache()
     
     
 if __name__ == "__main__":

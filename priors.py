@@ -1,10 +1,10 @@
 # This file contains functions to help retrieve the required priors
 # for the method (fg/bg segmentation, point cloud, camera params, etc.)
 # using the Dust3r model.
-import hydra
 import numpy as np
 import sys
 import os
+import hydra
 sys.path.append('./dust3r')
 from omegaconf import DictConfig
 from dust3r.inference import inference
@@ -16,7 +16,7 @@ from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 from data_preprocess import extract_frames, extract_timeframe
 
 # TODO: Handle getting priors for arbitrary timesteps for mid scene reinitialization
-@hydra.main(config_path="config", config_name="dust3r")
+# @hydra.main(config_path="config", config_name="dust3r")
 def get_priors(cfg : DictConfig):
     model = AsymmetricCroCo3DStereo.from_pretrained(cfg.dust3r.model_name).to(cfg.dust3r.device)
     fn = extract_frames(cfg)
@@ -29,7 +29,7 @@ def get_priors(cfg : DictConfig):
 
     # retrieve priors from scene:
     imgs = np.array(scene.imgs)
-    w, h = imgs.shape[1], imgs.shape[2]
+    w, h = 640, 360 # imgs.shape[1], imgs.shape[2] hard coded til we get segmentation workin
     masks =  np.array([mask.float().detach().cpu().numpy() for mask in scene.get_masks()])
     intrinsics = get_intrinsics(scene, len(fn))
     w2c = (scene.get_im_poses().inverse()).detach().cpu().numpy()
@@ -67,5 +67,9 @@ def sparsify(pts, num_samples):
     sampled_pts = pts[indices]
     return sampled_pts
 
+@hydra.main(config_path="config", config_name="train")
+def test(cfg : DictConfig):
+    _ = get_priors(cfg)
+
 if __name__ == "__main__":
-    get_priors()
+    test()
