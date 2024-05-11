@@ -20,7 +20,7 @@ LOSS_WEIGTHS = {
     'rigid': 4.0,
     'rot': 4.0,
     'iso': 2.0,
-    'floor': 2.0,
+    'floor': 0.0,
     'bg': 20.0,
     'soft_col_cons': 0.01
 }

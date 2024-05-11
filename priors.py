@@ -36,10 +36,11 @@ def get_priors(cfg : DictConfig):
     w2c = np.tile(w2c[None], (len(fn), 1, 1, 1))
     pts3d = np.array([im_pts.detach().cpu().numpy() for im_pts in scene.get_pts3d()])
     pt_cld = np.concatenate((pts3d, imgs, masks[..., None]), axis=-1).reshape(-1, 7)
+    depths = np.array([depth.detach().cpu().numpy() for depth in scene.get_depthmaps()])
+    radius = depths[0].max() - depths[0].min() # TODO: Find a better way to get this
     if (cfg.sparsify.enabled):
         pt_cld = sparsify(pt_cld, cfg.sparsify.num_samples)
-    priors = {'k': intrinsics, 'w2c': w2c, 'pt_cld': pt_cld, 'fn': fn, 'w': w, 'h': h}
-
+    priors = {'k': intrinsics, 'w2c': w2c, 'pt_cld': pt_cld, 'fn': fn, 'w': w, 'h': h, 'radius': radius}
     # Save priors to file
     np.savez(cfg.data.priors, **priors)
 

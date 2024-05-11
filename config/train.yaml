@@ -2,7 +2,7 @@ hydra:
   job:
     chdir: False
 train:
-  seq: 'cook_spinach'
+  seq: 'cook_spinach_5'
   exp: 'dust3r'
 dust3r:
   device: 'cuda'
@@ -10,14 +10,14 @@ dust3r:
   schedule: 'cosine'
   scene_graph: 'swin-5' # Use complete if you have a lot of VRAM
   lr: 0.01
-  niter: 300
+  niter: 500
   model_name: ./dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
 
 sparsify:
-  enabled: True
-  num_samples: 500000 # Not sure
+  enabled: False
+  num_samples: 300000 # Not sure
 
 data:
-  path: './data/cook_spinach'
-  priors: './data/cook_spinach/priors.npz'
+  path: './data/cook_spinach_5'
+  priors: './data/cook_spinach_5/priors.npz'
   force_extract: False

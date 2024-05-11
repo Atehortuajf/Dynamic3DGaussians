@@ -305,5 +305,5 @@ def visualize(seq:str, exp:str):
 
 if __name__ == "__main__":
     exp_name = "dust3r"
-    for sequence in ["basketball_10"]:
+    for sequence in ["cook_spinach_5"]:
         visualize(sequence, exp_name)
