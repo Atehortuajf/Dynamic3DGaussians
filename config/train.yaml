@@ -2,7 +2,7 @@ hydra:
   job:
     chdir: False
 train:
-  seq: 'basketball_10'
+  seq: 'cook_spinach'
   exp: 'dust3r'
 dust3r:
   device: 'cuda'
@@ -15,9 +15,9 @@ dust3r:
 
 sparsify:
   enabled: True
-  num_samples: 194105 # Taken from the original init_pt_cld for basketball
+  num_samples: 500000 # Not sure
 
 data:
-  path: './data/basketball_10'
-  priors: './data/basketball_10/priors.npz'
+  path: './data/cook_spinach'
+  priors: './data/cook_spinach/priors.npz'
   force_extract: False
