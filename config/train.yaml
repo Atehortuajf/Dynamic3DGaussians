@@ -2,8 +2,10 @@ hydra:
   job:
     chdir: False
 train:
-  seq: 'cook_spinach_5'
+  seq: 'cook_spinach_2'
   exp: 'dust3r'
+  resize: True
+  resize_size: 512
 dust3r:
   device: 'cuda'
   batch_size: 1
@@ -18,6 +20,6 @@ sparsify:
   num_samples: 300000 # Not sure
 
 data:
-  path: './data/cook_spinach_5'
-  priors: './data/cook_spinach_5/priors.npz'
+  path: './data/cook_spinach_2'
+  priors: './data/cook_spinach_2/priors.npz'
   force_extract: False

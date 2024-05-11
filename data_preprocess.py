@@ -39,10 +39,14 @@ def extract_frames(cfg : DictConfig):
                 break
             # Save frame as PNG in the new directory
             frame_path = os.path.join(path, f"{frame_count:06d}.jpg")
+            if (cfg.train.resize):
+                resize_width = cfg.train.resize_size
+                resize_height = int(frame.shape[0] * (resize_width / frame.shape[1]))
+                frame = cv2.resize(frame, (resize_width, resize_height))
             h, w = frame.shape[:2]
             cv2.imwrite(frame_path, frame)
             generate_seg(frame_path, frame)
-            fn[frame_count][cam_id] = frame_path
+            fn[frame_count][cam_id] = f"{cam_id}/{frame_count:06d}.jpg"
             frame_count += 1
 
         cam.release()
