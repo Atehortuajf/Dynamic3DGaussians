@@ -1,14 +1,17 @@
 
 import torch
+import hydra
 import numpy as np
 import open3d as o3d
 from open3d.cuda.pybind.utility import Vector3dVector
 import time
+from omegaconf import DictConfig
 from diff_gaussian_rasterization import GaussianRasterizer as Renderer
 from helpers import setup_camera, quat_mult
 from external import build_rotation
 from colormap import colormap
 from copy import deepcopy
+# from data_preprocess import recursive_dict
 
 RENDER_MODE = 'color'  # 'color', 'depth' or 'centers'
 # RENDER_MODE = 'depth'  # 'color', 'depth' or 'centers'
@@ -24,8 +27,8 @@ REMOVE_BACKGROUND = False  # False or True
 FORCE_LOOP = False  # False or True
 # FORCE_LOOP = True  # False or True
 
-width:int   = 640
-height:int  = 360
+width:int   = 512
+height:int  = 384
 
 near, far = 0.01, 100.0
 view_scale = 3.9
@@ -201,12 +204,14 @@ def rgbd_2_pointcloud(
     return world_space_points, colors
 
 
-def visualize(seq:str, exp:str):
-    scene_data, is_fg = load_scene_data(seq, exp)
+@hydra.main(config_path="config", config_name="visualize")
+def visualize(cfg : DictConfig):
+    scene_data, is_fg = load_scene_data(cfg.visualize.seq, cfg.visualize.exp)
     vis = o3d.visualization.Visualizer() #type: ignore
     vis.create_window(width=int(width * view_scale), height=int(height * view_scale), visible=True)
 
-    world_2_cam, intrinsics = init_camera(y_angle=60.)
+    priors = np.load(cfg.visualize.priors, allow_pickle=True)
+    world_2_cam, intrinsics = priors['w2c'][0][0], priors['k'][0][0] #init_camera(y_angle=60.)
     image, depth = render(world_2_cam, intrinsics, scene_data[0])
     init_points, init_colors = rgbd_2_pointcloud(image, depth, world_2_cam, intrinsics, show_depth=(RENDER_MODE == 'depth'))
 
@@ -304,6 +309,4 @@ def visualize(seq:str, exp:str):
 
 
 if __name__ == "__main__":
-    exp_name = "dust3r"
-    for sequence in ["cook_spinach_5"]:
-        visualize(sequence, exp_name)
+    visualize()

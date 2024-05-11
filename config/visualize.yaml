@@ -1,0 +1,7 @@
+hydra:
+  job:
+    chdir: False
+visualize:
+  seq: 'cook_spinach_2'
+  exp: 'dust3r'
+  priors: './data/cook_spinach_2/priors.npz'

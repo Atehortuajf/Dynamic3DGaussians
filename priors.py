@@ -56,6 +56,7 @@ def get_intrinsics(scene, scale, num_timesteps):
     intrinsics[:, 1, 1] = focals
     intrinsics[:, 0, 2] = pp[:, 0]
     intrinsics[:, 1, 2] = pp[:, 1]
+    intrinsics[:, 2, 2] = np.ones_like(focals)
     return np.tile(intrinsics[None], (num_timesteps, 1, 1, 1))
 
 # Dust3r outputs a dense point cloud, but 3DGS works better with a sparse initialization
