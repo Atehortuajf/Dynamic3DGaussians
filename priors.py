@@ -19,8 +19,9 @@ from data_preprocess import extract_frames, extract_timeframe
 # @hydra.main(config_path="config", config_name="dust3r")
 def get_priors(cfg : DictConfig):
     model = AsymmetricCroCo3DStereo.from_pretrained(cfg.dust3r.model_name).to(cfg.dust3r.device)
-    fn = extract_frames(cfg)
+    fn, w, h = extract_frames(cfg)
     images = load_images(extract_timeframe(cfg, 0), size=512)
+    intr_scale = w / 512 # Since dust3r does inference on scaled images, we must scale the intrinsics back accordingly
     pairs = make_pairs(images, scene_graph=cfg.dust3r.scene_graph, prefilter=None, symmetrize=True)
     output = inference(pairs, model, cfg.dust3r.device, batch_size=cfg.dust3r.batch_size)
 
@@ -29,26 +30,26 @@ def get_priors(cfg : DictConfig):
 
     # retrieve priors from scene:
     imgs = np.array(scene.imgs)
-    w, h = 640, 360 # imgs.shape[1], imgs.shape[2] hard coded til we get segmentation workin
     masks =  np.array([mask.float().detach().cpu().numpy() for mask in scene.get_masks()])
-    intrinsics = get_intrinsics(scene, len(fn))
+    intrinsics = get_intrinsics(scene, intr_scale, len(fn))
     w2c = (scene.get_im_poses().inverse()).detach().cpu().numpy()
     w2c = np.tile(w2c[None], (len(fn), 1, 1, 1))
     pts3d = np.array([im_pts.detach().cpu().numpy() for im_pts in scene.get_pts3d()])
     pt_cld = np.concatenate((pts3d, imgs, masks[..., None]), axis=-1).reshape(-1, 7)
     if (cfg.sparsify.enabled):
         pt_cld = sparsify(pt_cld, cfg.sparsify.num_samples)
-    priors = {'imgs': imgs, 'masks': masks, 'k': intrinsics,
-              'w2c': w2c, 'pt_cld': pt_cld, 'fn': fn, 'w': w, 'h': h}
+    priors = {'k': intrinsics, 'w2c': w2c, 'pt_cld': pt_cld, 'fn': fn, 'w': w, 'h': h}
+
+    # Save priors to file
     np.savez(cfg.data.priors, **priors)
 
     return priors
 
 # Construct the intrinsics matrix from output
 # TODO: We're currently assuming that intrinsics don't vary over time
-def get_intrinsics(scene, num_timesteps):
-    focals = scene.get_focals().detach().cpu().numpy().squeeze()
-    pp = scene.get_principal_points().detach().cpu().numpy()
+def get_intrinsics(scene, scale, num_timesteps):
+    focals = scene.get_focals().detach().cpu().numpy().squeeze() * scale
+    pp = scene.get_principal_points().detach().cpu().numpy() * scale
     intrinsics = np.zeros((focals.shape[0], 3, 3))
     intrinsics[:, 0, 0] = focals
     intrinsics[:, 1, 1] = focals

@@ -4,6 +4,7 @@
 import cv2
 import os
 import glob
+import numpy as np
 from omegaconf import DictConfig
 from collections import defaultdict
 
@@ -11,8 +12,8 @@ from collections import defaultdict
 def extract_frames(cfg : DictConfig):
     if os.path.exists(os.path.join(cfg.data.path, "ims")) and (not cfg.data.force_extract):
         print("Frames already extracted.")
-        file_names = register_fn(cfg.data.path)
-        return file_names
+        file_names, w, h = register_fn(cfg.data.path)
+        return file_names, w, h
     fn = recursive_dict()
     cam_id = 0
     for videopath in glob.glob(os.path.join(cfg.data.path, "*.mp4")):
@@ -22,9 +23,12 @@ def extract_frames(cfg : DictConfig):
             return
 
         path = os.path.join(cfg.data.path, f"ims/{cam_id}")
+        seg_path = os.path.join(cfg.data.path, f"seg/{cam_id}")
         # Create a new directory for frames if it doesn't exist
         if not os.path.exists(path):
             os.makedirs(path)
+        if not os.path.exists(seg_path):
+            os.makedirs(seg_path)
 
         # Frame counter
         frame_count = 0
@@ -35,22 +39,36 @@ def extract_frames(cfg : DictConfig):
                 break
             # Save frame as PNG in the new directory
             frame_path = os.path.join(path, f"{frame_count:06d}.jpg")
+            h, w = frame.shape[:2]
             cv2.imwrite(frame_path, frame)
+            generate_seg(frame_path, frame)
             fn[frame_count][cam_id] = frame_path
             frame_count += 1
 
         cam.release()
         cam_id += 1
-        print(f"Extracted {frame_count} frames to {path}")
+        print(f"Extracted {frame_count} frames to {path} and {seg_path}")
+    return fn, w, h
+
+# TODO: Find a way to generate binary segmentation masks
+def generate_seg(frame_path, frame):
+    h, w = frame.shape[:2]
+    mask = np.ones((h, w), dtype=np.uint8) * 255
+    mask_path = frame_path.replace("ims", "seg")
+    cv2.imwrite(mask_path, mask)
+    return
 
 def register_fn(path):
     fn = recursive_dict()
+    w = None
     for cam_path in os.listdir(os.path.join(path, "ims")):
         cam_id = int(cam_path.split("_")[0])
         for frame_path in os.listdir(os.path.join(path, "ims", cam_path)):
             timestep = int(frame_path.split(".")[0])            
             fn[timestep][cam_id] = os.path.join(cam_path, frame_path)
-    return fn
+            if (w is None): # Kinda dumb but it works
+                h, w = cv2.imread(os.path.join(path, "ims", cam_path, frame_path)).shape[:2]
+    return fn, w, h
 
 def extract_timeframe(cfg : DictConfig, timestep):
     ims_path = os.path.join(cfg.data.path, "ims")
