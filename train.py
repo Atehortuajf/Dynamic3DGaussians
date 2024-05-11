@@ -34,14 +34,14 @@ NEAR:float =    1.0
 FAR:float =     100.
 
 # Training Hyperparams
-INITIAL_TIMESTEP_ITERATIONS =   10_000
+INITIAL_TIMESTEP_ITERATIONS =   5_000
 TIMESTEP_ITERATIONS =           2_000
 IS_FORWARD_FACING =            True
 
 
 def construct_timestep_dataset(timestep:int, metadata:dict, sequence:str) -> list[dict]:
     dataset_entries = []
-    for camera_id in range(len(metadata['fn'][timestep])):
+    for camera_id in metadata['fn'][timestep].keys():
         width, height, intrinsics, extrinsics = metadata['w'], metadata['h'], metadata['k'][timestep][camera_id], metadata['w2c'][timestep][camera_id]
         camera = setup_camera(width, height, intrinsics, extrinsics, near=NEAR, far=FAR)
         
@@ -50,7 +50,7 @@ def construct_timestep_dataset(timestep:int, metadata:dict, sequence:str) -> lis
         image = np.array(copy.deepcopy(Image.open(f"./data/{sequence}/ims/{filename}")))
         image_tensor = torch.tensor(image).float().cuda().permute(2, 0, 1) / 255.
         
-        segmentation = np.array(copy.deepcopy(Image.open(f"./data/{sequence}/seg/{filename}"))).astype(np.float32)
+        segmentation = np.array(copy.deepcopy(Image.open(f"./data/{sequence}/seg/{filename}"))).astype(np.float32) # .replace('.jpg','.png')
         segmentation_tensor = torch.tensor(segmentation).float().cuda()
         segmentation_color = torch.stack((segmentation_tensor, torch.zeros_like(segmentation_tensor), 1 - segmentation_tensor))
         
@@ -88,10 +88,7 @@ def initialize_params(sequence:str, metadata:dict) -> tuple[dict, dict]:
     }
     params = {k: torch.nn.Parameter(torch.tensor(v).cuda().float().contiguous().requires_grad_(True)) for k, v in
               params.items()}
-    cam_centers = np.linalg.inv(metadata['w2c'][0])[:, :3, 3]  # Get scene radius
-    scene_radius = SCENE_SIZE_MULT * np.max(np.linalg.norm(cam_centers - np.mean(cam_centers, 0)[None], axis=-1))
-    if IS_FORWARD_FACING:
-        scene_radius *= 10
+    scene_radius = metadata['radius'] * SCENE_SIZE_MULT
     variables = {'max_2D_radius': torch.zeros(params['means3D'].shape[0]).cuda().float(),
                  'scene_radius': scene_radius,
                  'means2D_gradient_accum': torch.zeros(params['means3D'].shape[0]).cuda().float(),
