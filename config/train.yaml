@@ -11,6 +11,7 @@ dust3r:
   batch_size: 1
   schedule: 'cosine'
   scene_graph: 'swin-5' # Use complete if you have a lot of VRAM
+  scene_scale: 10.0 # For some reason the scene is too small by default and the rasterizer ends up culling a good chunk
   lr: 0.01
   niter: 500
   model_name: ./dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth

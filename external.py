@@ -138,7 +138,7 @@ def cat_params_to_optimizer(new_params, params, optimizer):
 
 def remove_points(to_remove, params, variables, optimizer):
     to_keep = ~to_remove
-    keys = [k for k in params.keys() if k not in ['cam_m', 'cam_c']]
+    keys = [k for k in params.keys() if k not in ['cam_m', 'cam_c', 'cam_pos', 'cam_rot']]
     for k in keys:
         group = [g for g in optimizer.param_groups if g['name'] == k][0]
         stored_state = optimizer.state.get(group['params'][0], None)
@@ -171,7 +171,7 @@ def densify(params, variables, optimizer, i, new_objs=False):
             grads[grads.isnan()] = 0.0
             to_clone = torch.logical_and(grads >= grad_thresh, (
                         torch.max(torch.exp(params['log_scales']), dim=1).values <= 0.01 * variables['scene_radius']))
-            new_params = {k: v[to_clone] for k, v in params.items() if k not in ['cam_m', 'cam_c']}
+            new_params = {k: v[to_clone] for k, v in params.items() if k not in ['cam_m', 'cam_c', 'cam_pos', 'cam_rot']}
             params = cat_params_to_optimizer(new_params, params, optimizer)
             num_pts = params['means3D'].shape[0]
 
@@ -181,7 +181,7 @@ def densify(params, variables, optimizer, i, new_objs=False):
                                          torch.max(torch.exp(params['log_scales']), dim=1).values > 0.01 * variables[
                                              'scene_radius'])
             n = 2  # number to split into
-            new_params = {k: v[to_split].repeat(n, 1) for k, v in params.items() if k not in ['cam_m', 'cam_c']}
+            new_params = {k: v[to_split].repeat(n, 1) for k, v in params.items() if k not in ['cam_m', 'cam_c', 'cam_pos', 'cam_rot']}
             stds = torch.exp(params['log_scales'])[to_split].repeat(n, 1)
             means = torch.zeros((stds.size(0), 3), device="cuda")
             samples = torch.normal(mean=means, std=stds)
