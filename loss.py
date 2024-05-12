@@ -22,7 +22,8 @@ LOSS_WEIGTHS = {
     'iso': 2.0,
     'floor': 0.0,
     'bg': 20.0,
-    'soft_col_cons': 0.01
+    'soft_col_cons': 0.01,
+    'pose_cons': 0.01
 }
 
 def apply_camera_parameters(image: torch.Tensor, params: dict, curr_data: dict) -> torch.Tensor:
@@ -55,10 +56,20 @@ def compute_floor_loss(fg_pts):
 def compute_bg_loss(bg_pts, bg_rot, variables):
     return l1_loss_v2(bg_pts, variables["init_bg_pts"]) + l1_loss_v2(bg_rot, variables["init_bg_rot"])
 
+def compute_pose_loss(prev_pos, pos):
+    return l1_loss_v2(prev_pos, pos)
+
 
 def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bool):
 
     losses = {}
+
+    # Pose update
+    curr_data['cam'].viewmatrix[..., :3, :3] = params['cam_rot'][curr_data['id']].detach().T
+    curr_data['cam'].viewmatrix[..., 3, :3] = params['cam_pos'][curr_data['id']].detach()
+    curr_data['cam'].projmatrix[...] = curr_data['cam'].viewmatrix.bmm(curr_data['proj'])
+
+    losses['pose_cons'] = compute_pose_loss(variables["prev_cam_pos"], curr_data['cam'].viewmatrix[..., :3, 3])
 
     # Image
     rendervar = params2rendervar(params)

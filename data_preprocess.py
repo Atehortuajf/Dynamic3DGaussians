@@ -77,8 +77,8 @@ def register_fn(path):
 def extract_timeframe(cfg : DictConfig, timestep):
     ims_path = os.path.join(cfg.data.path, "ims")
     timestep_image_paths = []
-    for cam_path in os.listdir(ims_path):
-        im_path = os.path.join(ims_path, cam_path, f"{timestep:06d}.jpg")
+    for cam_id in range(len(os.listdir(ims_path))):
+        im_path = os.path.join(ims_path, str(cam_id), f"{timestep:06d}.jpg")
         timestep_image_paths.append(im_path)
     return timestep_image_paths
 

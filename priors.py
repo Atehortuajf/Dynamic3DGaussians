@@ -3,7 +3,7 @@
 # using the Dust3r model.
 import numpy as np
 import sys
-import os
+import torch
 import hydra
 sys.path.append('./dust3r')
 from omegaconf import DictConfig
@@ -14,6 +14,7 @@ from dust3r.image_pairs import make_pairs
 from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 
 from data_preprocess import extract_frames, extract_timeframe
+from check_priors import test_priors
 
 # TODO: Handle getting priors for arbitrary timesteps for mid scene reinitialization
 # @hydra.main(config_path="config", config_name="dust3r")
@@ -27,30 +28,35 @@ def get_priors(cfg : DictConfig):
 
     scene = global_aligner(output, device=cfg.dust3r.device, mode=GlobalAlignerMode.PointCloudOptimizer)
     _ = scene.compute_global_alignment(init="mst", niter=cfg.dust3r.niter, schedule=cfg.dust3r.schedule, lr=cfg.dust3r.lr)
+    scene = scene.clean_pointcloud()
 
     # retrieve priors from scene:
-    imgs = np.array(scene.imgs)
-    masks =  np.array([mask.float().detach().cpu().numpy() for mask in scene.get_masks()])
+    masks =  np.array([mask.detach().cpu().numpy() for mask in scene.get_masks()])
+    imgs = np.array(scene.imgs)[masks]
     intrinsics = get_intrinsics(scene, intr_scale, len(fn))
-    w2c = (scene.get_im_poses().inverse()).detach().cpu().numpy()
+    w2c = invert_c2w(scene.get_im_poses().detach(), cfg.dust3r.scene_scale).cpu().numpy()
     w2c = np.tile(w2c[None], (len(fn), 1, 1, 1))
-    pts3d = np.array([im_pts.detach().cpu().numpy() for im_pts in scene.get_pts3d()])
-    pt_cld = np.concatenate((pts3d, imgs, masks[..., None]), axis=-1).reshape(-1, 7)
-    depths = np.array([depth.detach().cpu().numpy() for depth in scene.get_depthmaps()])
+    pts3d = np.array([im_pts.detach().cpu().numpy() for im_pts in scene.get_pts3d()])[masks] * cfg.dust3r.scene_scale
+    is_fg = np.ones_like(pts3d[..., 0])[..., None] # TODO: Do something smarter here
+    pt_cld = np.concatenate((pts3d, imgs, is_fg), axis=-1).reshape(-1, 7)
+    depths = np.array([depth.detach().cpu().numpy() for depth in scene.get_depthmaps()]) * cfg.dust3r.scene_scale
     radius = depths[0].max() - depths[0].min() # TODO: Find a better way to get this
     if (cfg.sparsify.enabled):
         pt_cld = sparsify(pt_cld, cfg.sparsify.num_samples)
     priors = {'k': intrinsics, 'w2c': w2c, 'pt_cld': pt_cld, 'fn': fn, 'w': w, 'h': h, 'radius': radius}
     # Save priors to file
     np.savez(cfg.data.priors, **priors)
+    # scene.show()
+    # test_priors(cfg, priors)
 
     return priors
 
 # Construct the intrinsics matrix from output
+# We redifine this so that we can scale to original image size
 # TODO: We're currently assuming that intrinsics don't vary over time
-def get_intrinsics(scene, scale, num_timesteps):
-    focals = scene.get_focals().detach().cpu().numpy().squeeze() * scale
-    pp = scene.get_principal_points().detach().cpu().numpy() * scale
+def get_intrinsics(scene, resize_scale, num_timesteps):
+    focals = scene.get_focals().detach().cpu().numpy().squeeze() * resize_scale
+    pp = scene.get_principal_points().detach().cpu().numpy() * resize_scale
     intrinsics = np.zeros((focals.shape[0], 3, 3))
     intrinsics[:, 0, 0] = focals
     intrinsics[:, 1, 1] = focals
@@ -69,6 +75,15 @@ def sparsify(pts, num_samples):
     # Index pts with the chosen indices to get the sampled points
     sampled_pts = pts[indices]
     return sampled_pts
+
+def invert_c2w(c2w, scene_scale):
+    R = c2w[:, :3, :3]
+    t = c2w[:, :3, 3]
+    w2c = torch.zeros_like(c2w)
+    w2c[:, :3, :3] = R.transpose(-1, -2)
+    w2c[:, :3, 3] = -torch.einsum('bii,bi->bi', R.transpose(-1, -2), t) * scene_scale
+    w2c[:, 3, 3] = 1
+    return w2c
 
 @hydra.main(config_path="config", config_name="train")
 def test(cfg : DictConfig):

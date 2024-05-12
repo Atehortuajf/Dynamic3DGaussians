@@ -25,18 +25,19 @@ from priors import get_priors
 
 from loss import get_loss
 
+from lerp_video import lerp_video
+
 MAX_CAMS:int =          50
 NUM_NEAREST_NEIGH:int = 3
 SCENE_SIZE_MULT:float = 1.1
 
 # Camera
-NEAR:float =    1.0
+NEAR:float =    0.00001
 FAR:float =     100.
 
 # Training Hyperparams
 INITIAL_TIMESTEP_ITERATIONS =   5_000
 TIMESTEP_ITERATIONS =           2_000
-IS_FORWARD_FACING =            True
 
 
 def construct_timestep_dataset(timestep:int, metadata:dict, sequence:str) -> list[dict]:
@@ -44,6 +45,7 @@ def construct_timestep_dataset(timestep:int, metadata:dict, sequence:str) -> lis
     for camera_id in metadata['fn'][timestep].keys():
         width, height, intrinsics, extrinsics = metadata['w'], metadata['h'], metadata['k'][timestep][camera_id], metadata['w2c'][timestep][camera_id]
         camera = setup_camera(width, height, intrinsics, extrinsics, near=NEAR, far=FAR)
+        opengl_proj = camera.viewmatrix.inverse().bmm(camera.projmatrix)
         
         filename = metadata['fn'][timestep][camera_id]
         
@@ -54,7 +56,8 @@ def construct_timestep_dataset(timestep:int, metadata:dict, sequence:str) -> lis
         segmentation_tensor = torch.tensor(segmentation).float().cuda()
         segmentation_color = torch.stack((segmentation_tensor, torch.zeros_like(segmentation_tensor), 1 - segmentation_tensor))
         
-        dataset_entries.append({'cam': camera, 'im': image_tensor, 'seg': segmentation_color, 'id': camera_id})
+        dataset_entries.append({'cam': camera, 'im': image_tensor, 'seg': segmentation_color,
+                                'id': camera_id, 't': timestep, 'proj': opengl_proj})
     
     return dataset_entries
 
@@ -85,6 +88,8 @@ def initialize_params(sequence:str, metadata:dict) -> tuple[dict, dict]:
         'log_scales': np.tile(np.log(np.sqrt(mean_square_distance))[..., None], (1, 3)),
         'cam_m': np.zeros((MAX_CAMS, 3)),
         'cam_c': np.zeros((MAX_CAMS, 3)),
+        'cam_pos': metadata['w2c'][0, :, :3, 3], # Initial camera positions
+        'cam_rot': metadata['w2c'][0, :, :3, :3], # Initial camera rotation matrices
     }
     params = {k: torch.nn.Parameter(torch.tensor(v).cuda().float().contiguous().requires_grad_(True)) for k, v in
               params.items()}
@@ -92,7 +97,9 @@ def initialize_params(sequence:str, metadata:dict) -> tuple[dict, dict]:
     variables = {'max_2D_radius': torch.zeros(params['means3D'].shape[0]).cuda().float(),
                  'scene_radius': scene_radius,
                  'means2D_gradient_accum': torch.zeros(params['means3D'].shape[0]).cuda().float(),
-                 'denom': torch.zeros(params['means3D'].shape[0]).cuda().float()}
+                 'denom': torch.zeros(params['means3D'].shape[0]).cuda().float(),
+                 'prev_cam_pos': torch.tensor(metadata['w2c'][0, :, :3, 3]).cuda().float(),
+                 'prev_cam_rot': torch.tensor(metadata['w2c'][0, :, :3, :3]).cuda().float(),}
     return params, variables
 
 
@@ -106,6 +113,8 @@ def initialize_optimizer(params:dict, variables:dict):
         'log_scales': 0.001,
         'cam_m': 1e-4,
         'cam_c': 1e-4,
+        'cam_pos': 0.00016 * variables['scene_radius'],
+        'cam_rot': 0.00016 * variables['scene_radius'],
     }
     param_groups = [{'params': [v], 'name': k, 'lr': lrs[k]} for k, v in params.items()]
     return torch.optim.Adam(param_groups, lr=0.0, eps=1e-15)
@@ -163,6 +172,10 @@ def initialize_post_first_timestep(params, variables, optimizer, num_knn=20):
     variables["init_bg_rot"] = init_bg_rot.detach()
     variables["prev_pts"] = params['means3D'].detach()
     variables["prev_rot"] = torch.nn.functional.normalize(params['unnorm_rotations']).detach()
+
+    variables["prev_cam_pos"] = params['cam_pos'].detach()
+    variables["prev_cam_rot"] = params['cam_rot'].detach()
+
     params_to_fix = ['logit_opacities', 'log_scales', 'cam_m', 'cam_c']
     for param_group in optimizer.param_groups:
         if param_group["name"] in params_to_fix:
@@ -214,8 +227,8 @@ def train(cfg : DictConfig):
             
             with torch.no_grad():
                 report_progress(params, dataset[0], i, progress_bar)
-                if is_initial_timestep:
-                    params, variables = densify(params, variables, optimizer, i)
+                #if is_initial_timestep:
+                    #params, variables = densify(params, variables, optimizer, i)
         
         progress_bar.close()
         output_params.append(params2cpu(params, is_initial_timestep))

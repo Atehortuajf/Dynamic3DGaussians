@@ -167,7 +167,7 @@ def rgbd_2_pointcloud(
         show_depth:bool = False,
         project_to_cam_w_scale:float | None = None
     ) -> tuple[Vector3dVector, Vector3dVector]:
-    depth_near:float    = 1.5
+    depth_near:float    = 0.01
     depth_far:float     = 6
 
     # intrinsic matrix is useful when you want to back-project 2D points from the image plane to 3D rays in camera space
