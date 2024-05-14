@@ -42,7 +42,10 @@ def get_priors(cfg : DictConfig):
     is_fg = np.ones_like(pts3d[..., 0])[..., None] # TODO: Do something smarter here
     pt_cld = np.concatenate((pts3d, imgs, is_fg), axis=-1).reshape(-1, 7)
     depths = np.array([depth.detach().cpu().numpy() for depth in scene.get_depthmaps()]) * cfg.dust3r.scene_scale
-    radius = depths[0].max() - depths[0].min() # TODO: Find a better way to get this
+    if (cfg.dust3r.forward_facing):
+        radius = depths[0].max() - depths[0].min() # TODO: Find a better way to get this
+    else:
+        radius = np.linalg.norm(w2c[:,0,:3,3] - w2c[:,1,:3,3])
     if (cfg.sparsify.enabled):
         pt_cld = sparsify(pt_cld, cfg.sparsify.num_samples)
     priors = {'k': intrinsics, 'w2c': w2c, 'pt_cld': pt_cld, 'fn': fn, 'w': w, 'h': h, 'radius': radius}
