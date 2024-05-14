@@ -2,6 +2,6 @@ hydra:
   job:
     chdir: False
 visualize:
-  seq: 'tank'
+  seq: 'Horse_5'
   exp: 'dust3r_dense'
-  priors: './data/tank/priors.npz'
+  priors: './data/Horse_5/priors.npz'

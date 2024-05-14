@@ -57,6 +57,7 @@ dust3r:
   niter: 300
   model_name: ./dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
   visual_tests: True
+  forward_facing: False
 
 sparsify:
   enabled: False
