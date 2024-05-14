@@ -1,7 +1,7 @@
 [submodule "dust3r"]
-	path = ./dust3r
-	url = https://github.com/Davidyao99/dust3r.git
+	path = dust3r
+	url = https://github.com/JonathonLuiten/diff-gaussian-rasterization-w-depth.git
 
 [submodule "diff-gaussian-rasterization-w-depth"]
-	path = ./diff-gaussian-rasterization-w-depth
+	path = diff-gaussian-rasterization-w-depth
 	url = https://github.com/JonathonLuiten/diff-gaussian-rasterization-w-depth.git
