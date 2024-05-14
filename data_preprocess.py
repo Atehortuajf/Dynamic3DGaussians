@@ -54,6 +54,34 @@ def extract_frames(cfg : DictConfig):
         print(f"Extracted {frame_count} frames to {path} and {seg_path}")
     return fn, w, h
 
+# To train a static scene from ims
+def prepare_static(cfg : DictConfig):
+    if os.path.exists(os.path.join(cfg.data.path, "ims")) and (not cfg.data.force_extract):
+        print("Frames already extracted.")
+        file_names, w, h = register_fn(cfg.data.path)
+        return file_names, w, h
+    paths = glob.glob(os.path.join(cfg.data.path, "*.jpg"))
+    fn = recursive_dict()
+    for image_path, cam_id in zip(paths, range(len(paths))):
+        frame = cv2.imread(image_path)
+        path = os.path.join(cfg.data.path, f"ims/{cam_id}")
+        seg_path = os.path.join(cfg.data.path, f"seg/{cam_id}")
+        ims_path = os.path.join(path, "000000.jpg")
+        # Create a new directory for frames if it doesn't exist
+        if not os.path.exists(path):
+            os.makedirs(path)
+        if not os.path.exists(seg_path):
+            os.makedirs(seg_path)
+        if (cfg.train.resize):
+                resize_width = cfg.train.resize_size
+                resize_height = int(frame.shape[0] * (resize_width / frame.shape[1]))
+                frame = cv2.resize(frame, (resize_width, resize_height))
+        h, w = frame.shape[:2]
+        fn[0][cam_id] = f"{cam_id}/000000.jpg"
+        cv2.imwrite(ims_path, frame)
+        generate_seg(ims_path, frame)
+    return fn, w, h
+
 # TODO: Find a way to generate binary segmentation masks
 def generate_seg(frame_path, frame):
     h, w = frame.shape[:2]

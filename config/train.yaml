@@ -1,11 +1,52 @@
 hydra:
   job:
     chdir: False
+
+data:
+  path: './data/tank'
+  priors: './data/tank/priors.npz'
+  force_extract: False
+
 train:
-  seq: 'cook_spinach_2'
-  exp: 'dust3r'
+  seq: 'tank'
+  exp: 'dust3r_dense'
+  debug: False
   resize: True
   resize_size: 512
+  is_static: True
+  max_cams: 50
+  num_nearest: 3
+  scene_size_mult: 1.1
+  near: 0.001
+  far: 100.0
+  initial_timestep_iters: 5000
+  timestep_iters: 2000
+
+optimizer:
+  means3D_lr: 0.00016
+  rgb_lr: 0.0025
+  seg_lr: 0.0
+  unnorm_rot_lr: 0.001
+  logit_opacity_lr: 0.05
+  log_scales_lr: 0.001
+  cam_m_lr: 0.0001
+  cam_c_lr: 0.0001
+  cam_pos_lr: 0.0001
+  cam_rot_lr: 0.0001
+
+loss:
+  im: 1.0
+  seg: 0.0
+  rigid: 4.0
+  rot: 4.0
+  iso: 2.0
+  floor: 0.0
+  bg: 20.0
+  soft_col_cons: 0.01
+  pose_cons: 0.1
+  l1: 0.2
+  ssim: 0.8
+
 dust3r:
   device: 'cuda'
   batch_size: 1
@@ -13,14 +54,10 @@ dust3r:
   scene_graph: 'swin-5' # Use complete if you have a lot of VRAM
   scene_scale: 10.0 # For some reason the scene is too small by default and the rasterizer ends up culling a good chunk
   lr: 0.01
-  niter: 500
+  niter: 300
   model_name: ./dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
+  visual_tests: False
 
 sparsify:
   enabled: False
-  num_samples: 300000 # Not sure
-
-data:
-  path: './data/cook_spinach_2'
-  priors: './data/cook_spinach_2/priors.npz'
-  force_extract: False
+  num_samples: 100000 # Not sure

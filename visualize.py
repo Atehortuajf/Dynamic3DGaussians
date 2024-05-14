@@ -204,7 +204,7 @@ def rgbd_2_pointcloud(
     return world_space_points, colors
 
 
-@hydra.main(config_path="config", config_name="visualize")
+@hydra.main(config_path="config", config_name="visualize", version_base=None)
 def visualize(cfg : DictConfig):
     scene_data, is_fg = load_scene_data(cfg.visualize.seq, cfg.visualize.exp)
     vis = o3d.visualization.Visualizer() #type: ignore

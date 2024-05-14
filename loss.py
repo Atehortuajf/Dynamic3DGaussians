@@ -1,4 +1,5 @@
 import torch
+from omegaconf import DictConfig
 
 from helpers import l1_loss_v1
 from helpers import weighted_l2_loss_v1
@@ -6,34 +7,21 @@ from helpers import weighted_l2_loss_v2
 from helpers import l1_loss_v2
 from helpers import quat_mult
 from helpers import params2rendervar
+from helpers import build_rotation
 
 from external import calc_ssim
-from external import build_rotation
 
 from diff_gaussian_rasterization import GaussianRasterizer as Renderer
 
-L1_LOSS_WEIGHT:float =   0.8
-SSIM_LOSS_WEIGHT:float = 0.2
-LOSS_WEIGTHS = {
-    'im': 1.0,
-    'seg': 3.0,
-    'rigid': 4.0,
-    'rot': 4.0,
-    'iso': 2.0,
-    'floor': 0.0,
-    'bg': 20.0,
-    'soft_col_cons': 0.01,
-    'pose_cons': 0.01
-}
 
 def apply_camera_parameters(image: torch.Tensor, params: dict, curr_data: dict) -> torch.Tensor:
     curr_id = curr_data['id']
     return torch.exp(params['cam_m'][curr_id])[:, None, None] * image + params['cam_c'][curr_id][:, None, None]
 
-def compute_loss(rendered: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+def compute_loss(cfg:DictConfig, rendered: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     l1 = l1_loss_v1(rendered, target)
     ssim = 1.0 - calc_ssim(rendered, target)
-    return L1_LOSS_WEIGHT * l1 + SSIM_LOSS_WEIGHT * ssim
+    return cfg.loss.l1 * l1 + cfg.loss.ssim * ssim
 
 def compute_rigid_loss(fg_pts, rot, variables):
     neighbor_pts = fg_pts[variables["neighbor_indices"]]
@@ -56,20 +44,20 @@ def compute_floor_loss(fg_pts):
 def compute_bg_loss(bg_pts, bg_rot, variables):
     return l1_loss_v2(bg_pts, variables["init_bg_pts"]) + l1_loss_v2(bg_rot, variables["init_bg_rot"])
 
-def compute_pose_loss(prev_pos, pos):
-    return l1_loss_v2(prev_pos, pos)
+def compute_pose_loss(prev_pos, pos, rot):
+    return l1_loss_v2(prev_pos[..., :3, 3], pos) + l1_loss_v2(prev_pos[..., :3, :3], build_rotation(rot))
 
 
-def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bool):
+def get_loss(cfg:DictConfig ,params:dict, curr_data:dict, variables:dict, is_initial_timestep:bool):
 
     losses = {}
 
     # Pose update
-    curr_data['cam'].viewmatrix[..., :3, :3] = params['cam_rot'][curr_data['id']].detach().T
+    curr_data['cam'].viewmatrix[..., :3, :3] = build_rotation(params['cam_rot'][curr_data['id']].detach()).T
     curr_data['cam'].viewmatrix[..., 3, :3] = params['cam_pos'][curr_data['id']].detach()
     curr_data['cam'].projmatrix[...] = curr_data['cam'].viewmatrix.bmm(curr_data['proj'])
 
-    losses['pose_cons'] = compute_pose_loss(variables["prev_cam_pos"], curr_data['cam'].viewmatrix[..., :3, 3])
+    losses['pose_cons'] = compute_pose_loss(variables["prev_cam_pos"], params['cam_pos'], params['cam_rot']) * cfg.loss.pose_cons
 
     # Image
     rendervar = params2rendervar(params)
@@ -83,8 +71,8 @@ def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bo
     segrendervar['colors_precomp'] = params['seg_colors']
     seg, _, _, = Renderer(raster_settings=curr_data['cam'])(**segrendervar)
 
-    losses['im'] = compute_loss(image, curr_data['im'])
-    losses['seg'] = compute_loss(seg, curr_data['seg'])
+    losses['im'] = compute_loss(cfg, image, curr_data['im']) * cfg.loss.im
+    losses['seg'] = compute_loss(cfg, seg, curr_data['seg']) * cfg.loss.seg
     
     if not is_initial_timestep:
         is_fg = (params['seg_colors'][:, 0] > 0.5).detach()
@@ -93,17 +81,17 @@ def get_loss(params:dict, curr_data:dict, variables:dict, is_initial_timestep:bo
         rel_rot = quat_mult(fg_rot, variables["prev_inv_rot_fg"])
         rot = build_rotation(rel_rot)
 
-        losses['rigid'] = compute_rigid_loss(fg_pts, rot, variables)
-        losses['rot'] = compute_rot_loss(rel_rot, variables)
-        losses['iso'] = compute_iso_loss(fg_pts, variables)
-        losses['floor'] = compute_floor_loss(fg_pts)
+        losses['rigid'] = compute_rigid_loss(fg_pts, rot, variables) * cfg.loss.rigid
+        losses['rot'] = compute_rot_loss(rel_rot, variables) * cfg.loss.rot
+        losses['iso'] = compute_iso_loss(fg_pts, variables) * cfg.loss.iso
+        losses['floor'] = compute_floor_loss(fg_pts) * cfg.loss.floor
         
         bg_pts = rendervar['means3D'][~is_fg]
         bg_rot = rendervar['rotations'][~is_fg]
-        losses['bg'] = compute_bg_loss(bg_pts, bg_rot, variables)
-        losses['soft_col_cons'] = l1_loss_v2(params['rgb_colors'], variables["prev_col"])
+        losses['bg'] = compute_bg_loss(bg_pts, bg_rot, variables) * cfg.loss.bg
+        losses['soft_col_cons'] = l1_loss_v2(params['rgb_colors'], variables["prev_col"]) * cfg.loss.soft_col_cons
 
-    loss = sum([LOSS_WEIGTHS[k] * v for k, v in losses.items()])
+    loss = sum([v for _, v in losses.items()])
     seen = radius > 0
     variables['max_2D_radius'][seen] = torch.max(radius[seen], variables['max_2D_radius'][seen])
     variables['seen'] = seen
