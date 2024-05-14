@@ -3,12 +3,12 @@ hydra:
     chdir: False
 
 data:
-  path: './data/tank'
-  priors: './data/tank/priors.npz'
+  path: './data/Horse_5'
+  priors: './data/Horse_5/priors.npz'
   force_extract: False
 
 train:
-  seq: 'tank'
+  seq: 'Horse_5'
   exp: 'dust3r_dense'
   debug: False
   resize: True
@@ -56,7 +56,7 @@ dust3r:
   lr: 0.01
   niter: 300
   model_name: ./dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
-  visual_tests: False
+  visual_tests: True
 
 sparsify:
   enabled: False
