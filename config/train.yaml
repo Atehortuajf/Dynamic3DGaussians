@@ -3,28 +3,28 @@ hydra:
     chdir: False
 
 data:
-  path: './data/Horse_5'
-  priors: './data/Horse_5/priors.npz'
+  path: './data/cook_spinach_5'
+  priors: './data/cook_spinach_5/priors.npz'
   force_extract: False
 
 train:
-  seq: 'Horse_5'
-  exp: 'dust3r_dense'
+  seq: 'cook_spinach_5'
+  exp: 'dust3r'
   debug: False
   resize: True
   resize_size: 512
-  is_static: True
+  is_static: False
   max_cams: 50
   num_nearest: 3
   scene_size_mult: 1.1
   near: 0.001
   far: 100.0
-  initial_timestep_iters: 5000
+  initial_timestep_iters: 1000
   timestep_iters: 2000
 
 optimizer:
-  means3D_lr: 0.00016
-  rgb_lr: 0.0025
+  means3D_lr: 0.000016
+  rgb_lr: 0.00025
   seg_lr: 0.0
   unnorm_rot_lr: 0.001
   logit_opacity_lr: 0.05
@@ -33,6 +33,7 @@ optimizer:
   cam_c_lr: 0.0001
   cam_pos_lr: 0.0001
   cam_rot_lr: 0.0001
+  lr_delay_mult: 0.01
 
 loss:
   im: 1.0
@@ -56,7 +57,7 @@ dust3r:
   lr: 0.01
   niter: 300
   model_name: ./dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
-  visual_tests: True
+  visual_tests: False
   forward_facing: False
 
 sparsify:

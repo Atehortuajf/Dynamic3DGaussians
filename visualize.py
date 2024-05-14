@@ -229,7 +229,7 @@ def visualize(cfg : DictConfig):
         elif ADDITIONAL_LINES == 'rotations':
             linesets = calculate_rot_vec(scene_data, is_fg)
         else:
-            raise ValueError(f"Unsupported value for ADDITIONAL_LINES")
+            raise ValueError("Unsupported value for ADDITIONAL_LINES")
         lines = o3d.geometry.LineSet()
         lines.points = linesets[0].points   #type: ignore
         lines.colors = linesets[0].colors   #type: ignore
