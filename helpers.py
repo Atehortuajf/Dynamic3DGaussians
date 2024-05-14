@@ -138,6 +138,93 @@ def quat_mult(q1, q2):
     z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
     return torch.stack([w, x, y, z]).T
 
+def build_rotation(quaternions):
+    """
+    Convert a batch of quaternions to rotation matrices.
+    
+    Args:
+        quaternions (torch.Tensor): A tensor of shape (..., 4) containing the quaternions.
+        
+    Returns:
+        torch.Tensor: A tensor of shape (..., 3, 3) containing the rotation matrices.
+    """
+    batch_dim = quaternions.shape[:-1]
+    q = quaternions.reshape(-1, 4)
+    
+    # Normalize the quaternions to ensure they are unit quaternions
+    q = q / q.norm(dim=1, keepdim=True)
+    
+    qw, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    
+    # Calculate the elements of the rotation matrix
+    R = torch.zeros((q.shape[0], 3, 3), dtype=q.dtype, device=q.device)
+    
+    R[:, 0, 0] = 1 - 2 * (qy * qy + qz * qz)
+    R[:, 0, 1] = 2 * (qx * qy - qz * qw)
+    R[:, 0, 2] = 2 * (qx * qz + qy * qw)
+    
+    R[:, 1, 0] = 2 * (qx * qy + qz * qw)
+    R[:, 1, 1] = 1 - 2 * (qx * qx + qz * qz)
+    R[:, 1, 2] = 2 * (qy * qz - qx * qw)
+    
+    R[:, 2, 0] = 2 * (qx * qz - qy * qw)
+    R[:, 2, 1] = 2 * (qy * qz + qx * qw)
+    R[:, 2, 2] = 1 - 2 * (qx * qx + qy * qy)
+    
+    return R.reshape(*batch_dim, 3, 3)
+
+def build_quaternion(rot_mats):
+    """
+    Convert a batch of rotation matrices to quaternions.
+    
+    Args:
+        rot_mats (torch.Tensor): A tensor of shape (..., 3, 3) containing the rotation matrices.
+        
+    Returns:
+        torch.Tensor: A tensor of shape (..., 4) containing the quaternions.
+    """
+    batch_dim = rot_mats.shape[:-2]
+    m = rot_mats.reshape(-1, 3, 3)
+    
+    # The trace of the matrix
+    trace = m[..., 0, 0] + m[..., 1, 1] + m[..., 2, 2]
+    s = torch.zeros_like(trace)
+    quaternion = torch.zeros((m.shape[0], 4), dtype=m.dtype, device=m.device)
+    
+    # For trace > 0
+    mask = trace > 0
+    s[mask] = torch.sqrt(trace[mask] + 1.0) * 2  # s=4*qw
+    quaternion[mask, 0] = 0.25 * s[mask]
+    quaternion[mask, 1] = (m[mask, 2, 1] - m[mask, 1, 2]) / s[mask]
+    quaternion[mask, 2] = (m[mask, 0, 2] - m[mask, 2, 0]) / s[mask]
+    quaternion[mask, 3] = (m[mask, 1, 0] - m[mask, 0, 1]) / s[mask]
+    
+    # For trace <= 0
+    mask = ~mask
+    mask_0 = (m[mask, 0, 0] > m[mask, 1, 1]) & (m[mask, 0, 0] > m[mask, 2, 2])
+    mask_1 = ~mask_0 & (m[mask, 1, 1] > m[mask, 2, 2])
+    mask_2 = ~mask_0 & ~mask_1
+    
+    s[mask][mask_0] = torch.sqrt(1.0 + m[mask][mask_0, 0, 0] - m[mask][mask_0, 1, 1] - m[mask][mask_0, 2, 2]) * 2  # s=4*qx
+    quaternion[mask][mask_0, 0] = (m[mask][mask_0, 2, 1] - m[mask][mask_0, 1, 2]) / s[mask][mask_0]
+    quaternion[mask][mask_0, 1] = 0.25 * s[mask][mask_0]
+    quaternion[mask][mask_0, 2] = (m[mask][mask_0, 0, 1] + m[mask][mask_0, 1, 0]) / s[mask][mask_0]
+    quaternion[mask][mask_0, 3] = (m[mask][mask_0, 0, 2] + m[mask][mask_0, 2, 0]) / s[mask][mask_0]
+    
+    s[mask][mask_1] = torch.sqrt(1.0 + m[mask][mask_1, 1, 1] - m[mask][mask_1, 0, 0] - m[mask][mask_1, 2, 2]) * 2  # s=4*qy
+    quaternion[mask][mask_1, 0] = (m[mask][mask_1, 0, 2] - m[mask][mask_1, 2, 0]) / s[mask][mask_1]
+    quaternion[mask][mask_1, 1] = (m[mask][mask_1, 0, 1] + m[mask][mask_1, 1, 0]) / s[mask][mask_1]
+    quaternion[mask][mask_1, 2] = 0.25 * s[mask][mask_1]
+    quaternion[mask][mask_1, 3] = (m[mask][mask_1, 1, 2] + m[mask][mask_1, 2, 1]) / s[mask][mask_1]
+    
+    s[mask][mask_2] = torch.sqrt(1.0 + m[mask][mask_2, 2, 2] - m[mask][mask_2, 0, 0] - m[mask][mask_2, 1, 1]) * 2  # s=4*qz
+    quaternion[mask][mask_2, 0] = (m[mask][mask_2, 1, 0] - m[mask][mask_2, 0, 1]) / s[mask][mask_2]
+    quaternion[mask][mask_2, 1] = (m[mask][mask_2, 0, 2] + m[mask][mask_2, 2, 0]) / s[mask][mask_2]
+    quaternion[mask][mask_2, 2] = (m[mask][mask_2, 1, 2] + m[mask][mask_2, 2, 1]) / s[mask][mask_2]
+    quaternion[mask][mask_2, 3] = 0.25 * s[mask][mask_2]
+    
+    return quaternion.reshape(*batch_dim, 4)
+
 
 def o3d_knn(pts, num_knn):
     indices = []
