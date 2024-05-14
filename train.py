@@ -18,15 +18,17 @@ from helpers import params2cpu
 from helpers import save_params
 
 from external import build_quaternion
+from external import build_rotation
 from external import calc_psnr
 from external import densify
 from external import update_params_and_optimizer
+from external import lr_scheduler
 
 from priors import get_priors
 
 from loss import get_loss
 
-
+schedulers = {}
 
 def construct_timestep_dataset(timestep:int, priors:dict, cfg:DictConfig) -> list[dict]:
     dataset_entries = []
@@ -88,6 +90,18 @@ def initialize_params(cfg:DictConfig, priors:dict) -> tuple[dict, dict]:
                  'denom': torch.zeros(params['means3D'].shape[0]).cuda().float(),
                  'prev_cam_pos': torch.tensor(priors['w2c'][0, ...]).cuda().float(),
                  'prev_cam_rot': torch.tensor(priors['w2c'][0, :, :3, :3]).cuda().float(),}
+    schedulers['means3D'] = lr_scheduler(cfg.optimizer.means3D_lr * variables['scene_radius'],
+                                         cfg.optimizer.means3D_lr * variables['scene_radius'] / 100.0,
+                                         lr_delay_mult=cfg.optimizer.lr_delay_mult, max_steps=cfg.train.initial_timestep_iters)
+    schedulers['rgb_colors'] = lr_scheduler(cfg.optimizer.means3D_lr * variables['scene_radius'],
+                                         cfg.optimizer.means3D_lr * variables['scene_radius'] / 100.0,
+                                         lr_delay_mult=cfg.optimizer.lr_delay_mult, max_steps=cfg.train.initial_timestep_iters)
+    schedulers['cam_pos'] = lr_scheduler(cfg.optimizer.cam_pos_lr * variables['scene_radius'],
+                                         cfg.optimizer.cam_pos_lr * variables['scene_radius'] / 100.0,
+                                         lr_delay_mult=cfg.optimizer.lr_delay_mult, max_steps=cfg.train.initial_timestep_iters)
+    schedulers['cam_rot'] = lr_scheduler(cfg.optimizer.cam_rot_lr * variables['scene_radius'],
+                                         cfg.optimizer.cam_rot_lr * variables['scene_radius'] / 100.0,
+                                         lr_delay_mult=cfg.optimizer.lr_delay_mult, max_steps=cfg.train.initial_timestep_iters)
     return params, variables
 
 
@@ -166,10 +180,12 @@ def initialize_post_first_timestep(params, variables, optimizer, num_knn=20):
     variables["prev_pts"] = params['means3D'].detach()
     variables["prev_rot"] = torch.nn.functional.normalize(params['unnorm_rotations']).detach()
 
-    variables["prev_cam_pos"] = params['cam_pos'].detach()
-    variables["prev_cam_rot"] = params['cam_rot'].detach()
+    variables["prev_cam_pos"][..., :3, 3] = params['cam_pos'].detach()
+    variables["prev_cam_pos"][..., :3, :3] = build_rotation(params['cam_rot'].detach())
 
-    params_to_fix = ['logit_opacities', 'log_scales', 'cam_m', 'cam_c']
+    update_lr_per_iter(optimizer, 0)
+
+    params_to_fix = ['logit_opacities', 'log_scales', 'cam_m', 'cam_c', 'cam_pos', 'cam_rot']
     for param_group in optimizer.param_groups:
         if param_group["name"] in params_to_fix:
             param_group['lr'] = 0.0
@@ -185,6 +201,12 @@ def report_progress(params, data, i, progress_bar, every_i=100):
         progress_bar.set_postfix({"train img 0 PSNR": f"{psnr:.{7}f}"})
         progress_bar.update(every_i)
 
+
+def update_lr_per_iter(optimizer, iter):
+    params_to_update = ['means3D', 'cam_pos', 'cam_rot']
+    for param_group in optimizer.param_groups:
+        if param_group["name"] in params_to_update:
+            param_group['lr'] = schedulers[param_group["name"]](iter)
 
 def train(cfg : DictConfig):
     exp_name = cfg.train.exp
@@ -222,7 +244,7 @@ def train(cfg : DictConfig):
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
 
-            if (cfg.train.is_static and i % 50 == 0):
+            if (cfg.train.is_static and i % (cfg.train.initial_timestep_iters / 100) == 0):
                 output_params.append(params2cpu(params, False))
             
             optimizer.step()
@@ -233,8 +255,10 @@ def train(cfg : DictConfig):
             
             with torch.no_grad():
                 report_progress(params, dataset[0], i, progress_bar)
-                if is_initial_timestep and (cfg.sparsify.enabled):
-                    params, variables = densify(params, variables, optimizer, i)
+                if is_initial_timestep :
+                    update_lr_per_iter(optimizer, i)
+                    if cfg.sparsify.enabled:
+                        params, variables = densify(params, variables, optimizer, i)
         
         progress_bar.close()
         if cfg.train.is_static:
