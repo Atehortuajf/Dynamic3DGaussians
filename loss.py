@@ -52,12 +52,13 @@ def get_loss(cfg:DictConfig ,params:dict, curr_data:dict, variables:dict, is_ini
 
     losses = {}
 
-    # Pose update
-    curr_data['cam'].viewmatrix[..., :3, :3] = build_rotation(params['cam_rot'][curr_data['id']].detach()).T
-    curr_data['cam'].viewmatrix[..., 3, :3] = params['cam_pos'][curr_data['id']].detach()
-    curr_data['cam'].projmatrix[...] = curr_data['cam'].viewmatrix.bmm(curr_data['proj'])
+    if (is_initial_timestep) or (cfg.train.moving_cams):
+        # Pose update
+        curr_data['cam'].viewmatrix[..., :3, :3] = build_rotation(params['cam_rot'][curr_data['id']].detach()).T
+        curr_data['cam'].viewmatrix[..., 3, :3] = params['cam_pos'][curr_data['id']].detach()
+        curr_data['cam'].projmatrix[...] = curr_data['cam'].viewmatrix.bmm(curr_data['proj'])
 
-    losses['pose_cons'] = compute_pose_loss(variables["prev_cam_pos"], params['cam_pos'], params['cam_rot']) * cfg.loss.pose_cons
+        losses['pose_cons'] = compute_pose_loss(variables["prev_cam_pos"], params['cam_pos'], params['cam_rot']) * cfg.loss.pose_cons
 
     # Image
     rendervar = params2rendervar(params)
@@ -72,24 +73,30 @@ def get_loss(cfg:DictConfig ,params:dict, curr_data:dict, variables:dict, is_ini
     seg, _, _, = Renderer(raster_settings=curr_data['cam'])(**segrendervar)
 
     losses['im'] = compute_loss(cfg, image, curr_data['im']) * cfg.loss.im
-    losses['seg'] = compute_loss(cfg, seg, curr_data['seg']) * cfg.loss.seg
+    #losses['seg'] = compute_loss(cfg, seg, curr_data['seg']) * cfg.loss.seg
     
-    if not is_initial_timestep:
-        is_fg = (params['seg_colors'][:, 0] > 0.5).detach()
-        fg_pts = rendervar['means3D'][is_fg]
-        fg_rot = rendervar['rotations'][is_fg]
-        rel_rot = quat_mult(fg_rot, variables["prev_inv_rot_fg"])
-        rot = build_rotation(rel_rot)
+    if (not is_initial_timestep):
+        if (not cfg.train.fast_dynamics):
+            is_fg = (params['seg_colors'][:, 0] > 0.5).detach()
+            fg_pts = rendervar['means3D'][is_fg]
+            fg_rot = rendervar['rotations'][is_fg]
+            rel_rot = quat_mult(fg_rot, variables["prev_inv_rot_fg"])
+            rot = build_rotation(rel_rot)
 
-        losses['rigid'] = compute_rigid_loss(fg_pts, rot, variables) * cfg.loss.rigid
-        losses['rot'] = compute_rot_loss(rel_rot, variables) * cfg.loss.rot
-        losses['iso'] = compute_iso_loss(fg_pts, variables) * cfg.loss.iso
-        losses['floor'] = compute_floor_loss(fg_pts) * cfg.loss.floor
-        
-        bg_pts = rendervar['means3D'][~is_fg]
-        bg_rot = rendervar['rotations'][~is_fg]
-        losses['bg'] = compute_bg_loss(bg_pts, bg_rot, variables) * cfg.loss.bg
-        losses['soft_col_cons'] = l1_loss_v2(params['rgb_colors'], variables["prev_col"]) * cfg.loss.soft_col_cons
+            losses['rigid'] = compute_rigid_loss(fg_pts, rot, variables) * cfg.loss.rigid
+            losses['rot'] = compute_rot_loss(rel_rot, variables) * cfg.loss.rot
+            losses['iso'] = compute_iso_loss(fg_pts, variables) * cfg.loss.iso
+            losses['floor'] = compute_floor_loss(fg_pts) * cfg.loss.floor
+            
+            bg_pts = rendervar['means3D'][~is_fg]
+            bg_rot = rendervar['rotations'][~is_fg]
+            losses['bg'] = compute_bg_loss(bg_pts, bg_rot, variables) * cfg.loss.bg
+            losses['soft_col_cons'] = l1_loss_v2(params['rgb_colors'], variables["prev_col"]) * cfg.loss.soft_col_cons
+        else:
+            rel_rot = quat_mult(rendervar['rotations'], variables["prev_inv_rot_fg"])
+            rot = build_rotation(rel_rot)
+            losses['rigid'] = compute_rigid_loss(rendervar['means3D'], rot, variables) * cfg.loss.rigid
+            losses['iso'] = compute_iso_loss(rendervar['means3D'], variables) * cfg.loss.iso
 
     loss = sum([v for _, v in losses.items()])
     seen = radius > 0
