@@ -3,24 +3,26 @@ hydra:
     chdir: False
 
 data:
-  path: './data/cook_spinach_5'
-  priors: './data/cook_spinach_5/priors.npz'
+  path: './data/Horse_5'
+  priors: './data/Horse_5/priors.npz'
   force_extract: False
 
 train:
-  seq: 'cook_spinach_5'
+  seq: 'Horse_5'
   exp: 'dust3r'
   debug: False
-  resize: True
+  resize: False
   resize_size: 512
-  is_static: False
+  is_static: True
   max_cams: 50
   num_nearest: 3
   scene_size_mult: 1.1
   near: 0.001
   far: 100.0
   initial_timestep_iters: 1000
-  timestep_iters: 2000
+  timestep_iters: 1000
+  fast_dynamics: True
+  moving_cams: False
 
 optimizer:
   means3D_lr: 0.000016
@@ -53,12 +55,13 @@ dust3r:
   batch_size: 1
   schedule: 'cosine'
   scene_graph: 'swin-5' # Use complete if you have a lot of VRAM
-  scene_scale: 10.0 # For some reason the scene is too small by default and the rasterizer ends up culling a good chunk
+  scene_scale: 1.0 # For some reason the scene is too small by default and the rasterizer ends up culling a good chunk
   lr: 0.01
   niter: 300
   model_name: ./dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
   visual_tests: False
   forward_facing: False
+  same_intrinsics: True
 
 sparsify:
   enabled: False

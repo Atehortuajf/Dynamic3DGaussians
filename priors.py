@@ -27,7 +27,7 @@ def get_priors(cfg : DictConfig):
     pairs = make_pairs(images, scene_graph=cfg.dust3r.scene_graph, prefilter=None, symmetrize=True)
     output = inference(pairs, model, cfg.dust3r.device, batch_size=cfg.dust3r.batch_size)
 
-    scene = global_aligner(output, device=cfg.dust3r.device, mode=GlobalAlignerMode.PointCloudOptimizer, same_focals=True)
+    scene = global_aligner(output, device=cfg.dust3r.device, mode=GlobalAlignerMode.PointCloudOptimizer, same_focals=cfg.dust3r.same_intrinsics)
     _ = scene.compute_global_alignment(init="mst", niter=cfg.dust3r.niter, schedule=cfg.dust3r.schedule, lr=cfg.dust3r.lr)
     scene = scene.clean_pointcloud()
 
