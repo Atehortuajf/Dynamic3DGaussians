@@ -12,7 +12,7 @@ train:
   debug: False
   resize: False
   resize_size: 512
-  is_static: True
+  is_static: True # Change between static and dynamic scenes, if static animates the training process
   max_cams: 50
   num_nearest: 3
   scene_size_mult: 1.1
