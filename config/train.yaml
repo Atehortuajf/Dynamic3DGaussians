@@ -3,12 +3,11 @@ hydra:
     chdir: False
 
 data:
-  path: './data/Horse_5'
-  priors: './data/Horse_5/priors.npz'
+  path: './data/Horse_5' # Specify path to the data
   force_extract: False
 
 train:
-  seq: 'Horse_5'
+  seq: 'Horse_5' # Jank, but change this to match data path folder '/path/to/data' -> 'data'
   exp: 'dust3r'
   debug: False
   resize: False
@@ -59,7 +58,7 @@ dust3r:
   lr: 0.01
   niter: 300
   model_name: ./dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
-  visual_tests: False
+  visual_tests: False # Currently broken
   forward_facing: False
   same_intrinsics: True
 

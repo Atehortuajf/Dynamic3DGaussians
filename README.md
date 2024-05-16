@@ -8,10 +8,6 @@ Reimplementation of [InstantSplat](https://instantsplat.github.io/) <br><br>
  TBD, 2024 <br>
 ate@mit.edu
 
-<p float="middle">
-  <img src="./teaser_figure.png" width="99%" />
-</p>
-
 ## Installation
 ```bash
 # Install this repo (pytorch)

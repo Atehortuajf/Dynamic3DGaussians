@@ -268,7 +268,7 @@ def train(cfg : DictConfig):
         if cfg.train.is_static:
             break
         output_params.append(params2cpu(params, is_initial_timestep))
-        if is_initial_timestep or new_objs:
+        if is_initial_timestep:
             variables = initialize_post_first_timestep(params, variables, optimizer)
             
     save_params(output_params, sequence, exp_name)

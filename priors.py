@@ -49,8 +49,6 @@ def get_priors(cfg : DictConfig):
     if (cfg.sparsify.enabled):
         pt_cld = sparsify(pt_cld, cfg.sparsify.num_samples)
     priors = {'k': intrinsics, 'w2c': w2c, 'pt_cld': pt_cld, 'fn': fn, 'w': w, 'h': h, 'radius': radius}
-    # Save priors to file
-    np.savez(cfg.data.priors, **priors)
     if (cfg.dust3r.visual_tests):
         scene.show()
         test_priors(cfg, priors)
