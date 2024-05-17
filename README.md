@@ -1,5 +1,5 @@
 # Sparsed-view Dynamic 3D Gaussians in the Wild
-### [Project Page](https://dynamic3dgaussians.github.io/) | [Paper](https://arxiv.org/pdf/2308.09713.pdf) | [ArXiv](https://arxiv.org/abs/2308.09713) | [Tweet Thread](https://twitter.com/JonathonLuiten/status/1692346451668636100) | [Data](https://omnomnom.vision.rwth-aachen.de/data/Dynamic3DGaussians/data.zip) | [Pretrained Models](https://omnomnom.vision.rwth-aachen.de/data/Dynamic3DGaussians/output.zip)
+### [Project Page]() | [Paper]() | [ArXiv]()
 Reimplementation of [InstantSplat](https://instantsplat.github.io/) <br><br>
 [Sparsed-view Dynamic 3D Gaussians in the Wild](https://dynamic3dgaussians.github.io/)  
  [Juan Atehortúa](atehortua.me) <sup>1</sup>,
