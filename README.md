@@ -11,18 +11,16 @@ ate@mit.edu
 ## Installation
 ```bash
 # Install this repo (pytorch)
-git clone https://github.com/Atehortuajf/Dynamic3DGaussians.git
+git clone --recursive https://github.com/Atehortuajf/Dynamic3DGaussians.git
 conda env create --file environment.yml
 conda activate dynamic_gaussians
 
 # Install Gaussian Rasterizer
-git clone https://github.com/JonathonLuiten/diff-gaussian-rasterization-w-depth.git
 cd diff-gaussian-rasterization-w-depth
 python setup.py install
 pip install .
 
-# Install Dust3r and CroCo
-git clone --recursive https://github.com/naver/dust3r.git
+# Optional but highly recommended, compile curope stuff for dust3r
 cd dust3r/croco/models/curope/
 python setup.py build_ext --inplace
 cd ../../../
